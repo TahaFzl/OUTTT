@@ -21,8 +21,8 @@ Ultimate Tic-Tac-Toe features a 3×3 grid of smaller Tic-Tac-Toe boards. Players
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/TahaFzl/UTTT.git
-   cd UTTT
+   git clone https://github.com/TahaFzl/OUTTT.git
+   cd OUTTT
    ```
 
 2. **Install dependencies** (if any are listed in `package.json`):
