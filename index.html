@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Tic-Tac-Toe - Professional Competition Game</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="game-container">
+        <header class="game-header">
+            <h1 class="game-title">
+                <i class="fas fa-trophy"></i>
+                Ultimate Tic-Tac-Toe
+            </h1>
+            <div class="game-info">
+                <div class="player-indicator">
+                    <span class="current-player">Player X's Turn</span>
+                    <div class="player-symbol" id="currentPlayerSymbol">X</div>
+                </div>
+                <button class="reset-btn" id="resetGame">
+                    <i class="fas fa-redo"></i>
+                    New Game
+                </button>
+            </div>
+        </header>
+
+        <main class="game-main">
+            <div class="game-status" id="gameStatus">
+                <p class="status-text">Choose any board to start the game</p>
+            </div>
+
+            <div class="ultimate-board" id="ultimateBoard">
+            </div>
+
+            <div class="game-instructions">
+                <h3>How to Play:</h3>
+                <ul>
+                    <li>Win small boards by getting 3 in a row</li>
+                    <li>Your move determines which board your opponent plays on next</li>
+                    <li>If sent to a completed board, you can choose any available board</li>
+                    <li>Win the game by getting 3 small boards in a row!</li>
+                </ul>
+            </div>
+        </main>
+
+        <div class="game-overlay" id="gameOverlay">
+            <div class="overlay-content">
+                <div class="winner-announcement">
+                    <i class="fas fa-crown"></i>
+                    <h2 id="winnerText">Player X Wins!</h2>
+                    <p id="winnerSubtext">Congratulations on your victory!</p>
+                    <button class="play-again-btn" id="playAgain">
+                        <i class="fas fa-play"></i>
+                        Play Again
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>

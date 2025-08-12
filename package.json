@@ -1,0 +1,17 @@
+{
+    "name": "ultimate-tic-tac-toe-multiplayer",
+    "version": "1.0.0",
+    "description": "Professional Ultimate Tic-Tac-Toe with multiplayer support",
+    "main": "server.js",
+    "scripts": {
+      "start": "node server.js",
+      "dev": "node server.js"
+    },
+    "keywords": ["game", "tic-tac-toe", "multiplayer", "websocket"],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+      "express": "^5.1.0",
+      "ws": "^8.18.3"
+    }
+  }
