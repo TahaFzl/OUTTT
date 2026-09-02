@@ -1,11 +1,23 @@
 'use strict';
 
 const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+const LINE_COORDS = [
+  { x1: 0.15, y1: 0.5,  x2: 2.85, y2: 0.5  }, // row 0
+  { x1: 0.15, y1: 1.5,  x2: 2.85, y2: 1.5  }, // row 1
+  { x1: 0.15, y1: 2.5,  x2: 2.85, y2: 2.5  }, // row 2
+  { x1: 0.5,  y1: 0.15, x2: 0.5,  y2: 2.85 }, // col 0
+  { x1: 1.5,  y1: 0.15, x2: 1.5,  y2: 2.85 }, // col 1
+  { x1: 2.5,  y1: 0.15, x2: 2.5,  y2: 2.85 }, // col 2
+  { x1: 0.15, y1: 0.15, x2: 2.85, y2: 2.85 }, // diagonal
+  { x1: 2.85, y1: 0.15, x2: 0.15, y2: 2.85 }  // anti-diagonal
+];
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const X_COLOR = '#0A84FF';
 const O_COLOR = '#FF453A';
 const TINT_X = 'rgba(10,132,255,0.16)';
 const TINT_O = 'rgba(255,69,58,0.16)';
+const TURN_MS = 30000;
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function makeCode() {
   let s = '';
@@ -21,7 +33,9 @@ function freshGame() {
     active: null,
     winner: null,
     last: null,
-    history: []
+    history: [],
+    log: [],
+    turnStartedAt: Date.now()
   };
 }
 
@@ -34,11 +48,56 @@ const state = Object.assign({
   waitTitle: 'Waiting for opponent…',
   opponentName: 'Opponent',
   playerId: Math.random().toString(36).slice(2) + Date.now().toString(36),
-  mySymbol: 'X'
+  mySymbol: 'X',
+  turnDuration: TURN_MS,
+  chat: [],
+  sidePanelTab: 'log',
+  rematchPending: false,
+  rematchIncoming: false,
+  unreadChat: 0
 }, freshGame());
 
 let aiTimer = null;
 let socket = null;
+let timerInterval = null;
+let titleFlashInterval = null;
+const ORIGINAL_TITLE = document.title;
+
+function notifyNewMessage() {
+  if (!document.hidden || titleFlashInterval) return;
+  let toggle = false;
+  titleFlashInterval = setInterval(() => {
+    document.title = toggle ? ORIGINAL_TITLE : '💬 New message';
+    toggle = !toggle;
+  }, 1000);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && titleFlashInterval) {
+    clearInterval(titleFlashInterval);
+    titleFlashInterval = null;
+    document.title = ORIGINAL_TITLE;
+  }
+});
+
+function updateChatBadge() {
+  const tabBtn = document.getElementById('tab-chat');
+  let badge = tabBtn.querySelector('.tab-badge');
+  if (state.unreadChat > 0) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'tab-badge';
+      tabBtn.appendChild(badge);
+    }
+    badge.textContent = state.unreadChat > 9 ? '9+' : String(state.unreadChat);
+    tabBtn.classList.remove('tab-pulse');
+    void tabBtn.offsetWidth;
+    tabBtn.classList.add('tab-pulse');
+  } else if (badge) {
+    badge.remove();
+    tabBtn.classList.remove('tab-pulse');
+  }
+}
 
 // ── Online connection ───────────────────────────────────────────────────────
 
@@ -104,17 +163,56 @@ function handleServerMessage(msg) {
       break;
     case 'gameStart':
       clearTimeout(aiTimer);
+      stopTurnTimer();
+      state.chat = [];
+      state.log = [];
+      state.rematchPending = false;
+      state.rematchIncoming = false;
+      state.unreadChat = 0;
       applyServerGameState(msg.gameState);
       state.mySymbol = msg.playerSymbol;
       state.opponentName = 'Opponent';
       state.last = null;
+      state.turnStartedAt = msg.turnStartedAt || Date.now();
+      state.turnDuration = msg.turnDuration || TURN_MS;
       state.mode = 'online';
       state.screen = 'game';
       render();
+      updateChatBadge();
+      appendLog('Game started — you are ' + state.mySymbol + '.');
+      startTurnTimer();
       break;
-    case 'move':
+    case 'move': {
+      const prevWinners = state.winners;
+      const prevWinner = state.winner;
       applyServerGameState(msg.gameState);
       state.last = msg.boardIndex * 9 + msg.cellIndex;
+      state.turnStartedAt = msg.turnStartedAt || Date.now();
+      state.turnDuration = msg.turnDuration || TURN_MS;
+      render();
+      logMoveOutcome(msg.symbol, msg.boardIndex, msg.cellIndex, !!msg.timedOut, prevWinners, prevWinner);
+      if (state.winner) stopTurnTimer(); else startTurnTimer();
+      break;
+    }
+    case 'chat': {
+      const mine = msg.symbol === state.mySymbol;
+      appendChat({ text: msg.text, mine: mine });
+      if (!mine) {
+        if (state.sidePanelTab !== 'chat') {
+          state.unreadChat += 1;
+          updateChatBadge();
+        }
+        notifyNewMessage();
+      }
+      break;
+    }
+    case 'rematchRequested':
+      state.rematchIncoming = true;
+      render();
+      break;
+    case 'rematchDeclined':
+      state.rematchPending = false;
+      appendLog('Opponent declined the rematch.');
       render();
       break;
     case 'playerDisconnected':
@@ -131,11 +229,134 @@ function handleServerMessage(msg) {
   }
 }
 
+// ── Match log / chat ────────────────────────────────────────────────────────
+
+function displayName(symbol) {
+  const s = state;
+  if (s.mode === 'local') return symbol === 'X' ? 'Player 1' : 'Player 2';
+  if (s.mode === 'cpu') return symbol === 'X' ? 'You' : 'Computer';
+  if (s.mode === 'online') return symbol === s.mySymbol ? 'You' : s.opponentName;
+  return symbol;
+}
+
+function appendLog(text, highlight) {
+  state.log = state.log.concat([{ text: text, highlight: !!highlight }]);
+  if (state.log.length > 300) state.log = state.log.slice(-300);
+  renderLogList();
+}
+
+function renderLogList() {
+  const list = document.getElementById('log-list');
+  if (!list) return;
+  list.innerHTML = '';
+  state.log.forEach(entry => {
+    const div = document.createElement('div');
+    div.className = 'log-entry' + (entry.highlight ? ' log-highlight' : '');
+    div.textContent = entry.text;
+    list.appendChild(div);
+  });
+  list.scrollTop = list.scrollHeight;
+}
+
+function logMoveOutcome(symbol, boardIndex, cellIndex, timedOut, prevWinners, prevWinner) {
+  appendLog(displayName(symbol) + ' → board ' + (boardIndex + 1) + ', cell ' + (cellIndex + 1) + (timedOut ? ' (timed out)' : ''));
+  const bw = state.winners[boardIndex];
+  if (bw && bw !== prevWinners[boardIndex]) {
+    appendLog('Board ' + (boardIndex + 1) + (bw === 'D' ? ' tied.' : ' won by ' + displayName(bw) + '.'), true);
+  }
+  if (state.winner && state.winner !== prevWinner) {
+    appendLog(state.winner === 'D' ? 'Game tied!' : (displayName(state.winner) + ' wins the game!'), true);
+  }
+}
+
+function appendChat(entry) {
+  state.chat = state.chat.concat([entry]);
+  renderChatList();
+}
+
+function renderChatList() {
+  const list = document.getElementById('chat-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!state.chat.length) {
+    const empty = document.createElement('div');
+    empty.className = 'chat-empty';
+    empty.textContent = 'Say hello to your opponent.';
+    list.appendChild(empty);
+  } else {
+    state.chat.forEach(entry => {
+      const bubble = document.createElement('div');
+      bubble.className = 'chat-bubble' + (entry.mine ? ' mine' : '');
+      bubble.textContent = entry.text;
+      list.appendChild(bubble);
+    });
+  }
+  list.scrollTop = list.scrollHeight;
+}
+
+function sendChat(text) {
+  const trimmed = text.trim();
+  if (!trimmed || state.mode !== 'online') return;
+  sendMessage({ type: 'chat', playerId: state.playerId, text: trimmed });
+}
+
+// ── Turn timer ──────────────────────────────────────────────────────────────
+
+function startTurnTimer() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(tickTimer, 200);
+  tickTimer();
+}
+
+function stopTurnTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+  const el = document.getElementById('turn-timer');
+  if (el) { el.textContent = ''; el.classList.remove('timer-warn'); }
+}
+
+function tickTimer() {
+  const s = state;
+  if (s.screen !== 'game' || s.winner) { stopTurnTimer(); return; }
+  const elapsed = Date.now() - s.turnStartedAt;
+  const remaining = Math.max(0, s.turnDuration - elapsed);
+  const secs = Math.ceil(remaining / 1000);
+  const el = document.getElementById('turn-timer');
+  if (el) {
+    el.textContent = secs + 's';
+    el.classList.toggle('timer-warn', secs <= 10);
+  }
+  if (remaining <= 0) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    if (s.mode === 'local' || (s.mode === 'cpu' && s.turn === 'X')) {
+      autoPlayTimeout();
+    }
+  }
+}
+
+function autoPlayTimeout() {
+  const s = state;
+  if (s.winner) return;
+  const moves = legalMoves(s.cells, s.winners, s.active);
+  if (!moves.length) return;
+  const [b, c] = moves[Math.floor(Math.random() * moves.length)];
+  play(b, c, false, true);
+}
+
 // ── Game logic ──────────────────────────────────────────────────────────────
 
 function lineWinner(g) {
   for (const [a, b, c] of LINES) {
     if (g[a] && g[a] !== 'D' && g[a] === g[b] && g[a] === g[c]) return g[a];
+  }
+  return null;
+}
+
+function findWinPattern(triplet) {
+  for (let i = 0; i < LINES.length; i++) {
+    const [a, b, c] = LINES[i];
+    if (triplet[a] && triplet[a] !== 'D' && triplet[a] === triplet[b] && triplet[a] === triplet[c]) return i;
   }
   return null;
 }
@@ -152,7 +373,7 @@ function legalMoves(cells, winners, active) {
   return out;
 }
 
-function play(b, c, fromAI) {
+function play(b, c, fromAI, timedOut) {
   const s = state;
   if (s.winner) return;
   if (s.mode === 'online') {
@@ -167,6 +388,10 @@ function play(b, c, fromAI) {
   if (aiSide && s.turn === aiSide && !fromAI) return;
   if (s.winners[b] || s.cells[b * 9 + c]) return;
   if (s.active !== null && s.active !== b) return;
+
+  const symbol = s.turn;
+  const prevWinners = s.winners;
+  const prevWinner = s.winner;
 
   const snapshot = {
     cells: s.cells.slice(),
@@ -197,9 +422,17 @@ function play(b, c, fromAI) {
   s.active = active;
   s.winner = gameWinner || (winners.every(Boolean) ? 'D' : null);
   s.last = b * 9 + c;
+  s.turnStartedAt = Date.now();
   s.history = s.history.concat([snapshot]);
 
   render();
+  logMoveOutcome(symbol, b, c, !!timedOut, prevWinners, prevWinner);
+
+  if (s.winner) {
+    stopTurnTimer();
+  } else {
+    startTurnTimer();
+  }
 
   if (!done && s.mode !== 'local' && s.turn === 'O') {
     clearTimeout(aiTimer);
@@ -273,12 +506,18 @@ function startGame(mode, extra) {
   if (mode !== 'online') closeSocket();
   Object.assign(state, { screen: 'game', mode }, freshGame(), extra || {});
   render();
+  const label = mode === 'local' ? 'Pass & Play' : 'You vs Computer';
+  appendLog(label + ' — game started.');
+  startTurnTimer();
 }
 
 function resetGame() {
   clearTimeout(aiTimer);
   Object.assign(state, freshGame());
   render();
+  const label = state.mode === 'local' ? 'Pass & Play' : 'You vs Computer';
+  appendLog(label + ' — game started.');
+  startTurnTimer();
 }
 
 function undoMove() {
@@ -288,19 +527,27 @@ function undoMove() {
   let snap = null;
   while (n-- > 0 && h.length) snap = h.pop();
   if (snap) {
-    Object.assign(state, snap, { history: h });
+    Object.assign(state, snap, { history: h, turnStartedAt: Date.now() });
     render();
+    appendLog('Move undone.');
+    if (state.winner) stopTurnTimer(); else startTurnTimer();
   }
 }
 
 function goHome() {
   clearTimeout(aiTimer);
+  stopTurnTimer();
   closeSocket();
-  Object.assign(state, { screen: 'home', roomCode: makeCode(), joinCode: '', copied: false, mySymbol: 'X' });
+  Object.assign(state, {
+    screen: 'home', roomCode: makeCode(), joinCode: '', copied: false, mySymbol: 'X',
+    chat: [], log: [], rematchPending: false, rematchIncoming: false, sidePanelTab: 'log', unreadChat: 0
+  });
+  updateChatBadge();
   render();
 }
 
 function goLobby() {
+  stopTurnTimer();
   closeSocket();
   state.screen = 'lobby';
   state.roomCode = makeCode();
@@ -342,6 +589,19 @@ function renderLobby() {
 function renderWaiting() {
   document.getElementById('wait-title').textContent = state.waitTitle;
   document.getElementById('wait-room').textContent = 'Room ' + state.roomCode;
+}
+
+function renderSideTabs() {
+  const s = state;
+  const chatAllowed = s.mode === 'online';
+  const tabChatBtn = document.getElementById('tab-chat');
+  tabChatBtn.classList.toggle('hidden', !chatAllowed);
+  if (!chatAllowed) s.sidePanelTab = 'log';
+
+  document.getElementById('tab-log').classList.toggle('active', s.sidePanelTab === 'log');
+  tabChatBtn.classList.toggle('active', s.sidePanelTab === 'chat');
+  document.getElementById('panel-log').classList.toggle('active', s.sidePanelTab === 'log');
+  document.getElementById('panel-chat').classList.toggle('active', s.sidePanelTab === 'chat');
 }
 
 function renderGame() {
@@ -398,12 +658,70 @@ function renderGame() {
   document.getElementById('o-label').textContent =
     s.mode === 'local' ? 'Player 2' : (mySymbol === 'O' ? 'You' : oppLabel);
 
+  // Action buttons
   const undoBtn = document.getElementById('undo-btn');
-  undoBtn.style.opacity = s.mode === 'online' ? '0.35' : '1';
-  undoBtn.style.pointerEvents = s.mode === 'online' ? 'none' : 'auto';
-  document.getElementById('new-game-btn').textContent = s.mode === 'online' ? 'Leave Game' : 'New Game';
+  const rematchBtn = document.getElementById('rematch-btn');
+  const newGameBtn = document.getElementById('new-game-btn');
 
+  if (s.mode === 'online') {
+    undoBtn.classList.add('hidden');
+    if (s.winner) {
+      rematchBtn.classList.remove('hidden');
+      rematchBtn.textContent = s.rematchPending ? 'Waiting…' : 'Rematch';
+      rematchBtn.disabled = s.rematchPending;
+    } else {
+      rematchBtn.classList.add('hidden');
+    }
+    newGameBtn.textContent = 'Leave';
+  } else {
+    undoBtn.classList.remove('hidden');
+    rematchBtn.classList.add('hidden');
+    newGameBtn.textContent = 'New Game';
+  }
+
+  document.getElementById('rematch-incoming').classList.toggle('active', s.mode === 'online' && s.rematchIncoming);
+
+  renderSideTabs();
   renderBoards();
+  fitBoard();
+}
+
+// ── Fit the board to the viewport so the game never needs scrolling ─────────
+
+function fitBoard() {
+  if (state.screen !== 'game') return;
+  const boardsGrid = document.getElementById('boards-container');
+  const gameMain = document.querySelector('.game-main');
+  const gameLayout = document.querySelector('.game-layout');
+  const gameCol = document.querySelector('.game-col');
+  const screenEl = document.getElementById('screen-game');
+  const gameSide = document.querySelector('.game-side');
+  const topbar = document.querySelector('.game-topbar');
+  const chips = document.querySelector('.player-chips');
+  const actions = document.querySelector('.game-actions');
+  const hint = document.querySelector('.game-hint');
+  const rematchBar = document.getElementById('rematch-incoming');
+
+  boardsGrid.style.width = '';
+
+  const stacked = getComputedStyle(gameLayout).flexDirection === 'column';
+  const screenStyle = getComputedStyle(screenEl);
+  const padTop = parseFloat(screenStyle.paddingTop) || 0;
+  const padBottom = parseFloat(screenStyle.paddingBottom) || 0;
+  const gameColGap = parseFloat(getComputedStyle(gameCol).rowGap) || 0;
+  const mainGap = parseFloat(getComputedStyle(gameMain).rowGap) || 0;
+
+  let used = padTop + padBottom;
+  used += topbar.getBoundingClientRect().height + gameColGap;
+  used += chips.getBoundingClientRect().height + mainGap;
+  if (rematchBar.classList.contains('active')) used += rematchBar.getBoundingClientRect().height + mainGap;
+  used += actions.getBoundingClientRect().height + mainGap;
+  used += hint.getBoundingClientRect().height + mainGap;
+  if (stacked) used += gameSide.getBoundingClientRect().height + gameColGap;
+
+  const availableH = Math.max(180, window.innerHeight - used - 12);
+  const availableW = gameMain.getBoundingClientRect().width;
+  boardsGrid.style.width = Math.min(availableW, availableH) + 'px';
 }
 
 function renderBoards() {
@@ -446,9 +764,42 @@ function renderBoards() {
       cellEl.textContent = mark === 'X' ? '✕' : mark === 'O' ? '○' : '';
     }
   }
+
+  updateMainWinLine();
+}
+
+function updateMainWinLine() {
+  const s = state;
+  const svg = document.getElementById('main-win-line');
+  if (!svg) return;
+  const linePath = svg.querySelector('.win-line-path');
+  const pattern = (s.winner && s.winner !== 'D') ? findWinPattern(s.winners) : null;
+  if (pattern !== null) {
+    const coords = LINE_COORDS[pattern];
+    linePath.setAttribute('x1', coords.x1);
+    linePath.setAttribute('y1', coords.y1);
+    linePath.setAttribute('x2', coords.x2);
+    linePath.setAttribute('y2', coords.y2);
+    linePath.style.stroke = s.winner === 'X' ? X_COLOR : O_COLOR;
+    svg.style.opacity = '1';
+  } else {
+    svg.style.opacity = '0';
+  }
 }
 
 // ── DOM setup ────────────────────────────────────────────────────────────────
+
+function makeWinLineSVG(extraClass) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 3 3');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.classList.add('win-line');
+  if (extraClass) svg.classList.add(extraClass);
+  const line = document.createElementNS(SVG_NS, 'line');
+  line.classList.add('win-line-path');
+  svg.appendChild(line);
+  return svg;
+}
 
 function buildBoards() {
   const container = document.getElementById('boards-container');
@@ -475,6 +826,10 @@ function buildBoards() {
     board.appendChild(overlay);
     container.appendChild(board);
   }
+
+  const mainSvg = makeWinLineSVG('win-line-main');
+  mainSvg.id = 'main-win-line';
+  container.appendChild(mainSvg);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -526,6 +881,45 @@ document.addEventListener('DOMContentLoaded', () => {
     else resetGame();
   });
 
+  // Rematch
+  document.getElementById('rematch-btn').addEventListener('click', () => {
+    if (state.mode !== 'online' || !state.winner || state.rematchPending) return;
+    state.rematchPending = true;
+    sendMessage({ type: 'rematchRequest', playerId: state.playerId });
+    renderGame();
+  });
+  document.getElementById('rematch-accept').addEventListener('click', () => {
+    state.rematchIncoming = false;
+    sendMessage({ type: 'rematchResponse', playerId: state.playerId, accept: true });
+    renderGame();
+  });
+  document.getElementById('rematch-decline').addEventListener('click', () => {
+    state.rematchIncoming = false;
+    sendMessage({ type: 'rematchResponse', playerId: state.playerId, accept: false });
+    renderGame();
+  });
+
+  // Side panel tabs
+  document.getElementById('tab-log').addEventListener('click', () => {
+    state.sidePanelTab = 'log';
+    renderSideTabs();
+  });
+  document.getElementById('tab-chat').addEventListener('click', () => {
+    if (state.mode !== 'online') return;
+    state.sidePanelTab = 'chat';
+    state.unreadChat = 0;
+    updateChatBadge();
+    renderSideTabs();
+  });
+
+  // Chat
+  document.getElementById('chat-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const input = document.getElementById('chat-input');
+    sendChat(input.value);
+    input.value = '';
+  });
+
   // Board cell clicks (event delegation)
   document.getElementById('boards-container').addEventListener('click', e => {
     const cellEl = e.target.closest('.game-cell');
@@ -533,6 +927,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const b = parseInt(cellEl.dataset.board);
     const c = parseInt(cellEl.dataset.cell);
     play(b, c, false);
+  });
+
+  let resizeRAF = null;
+  window.addEventListener('resize', () => {
+    if (resizeRAF) cancelAnimationFrame(resizeRAF);
+    resizeRAF = requestAnimationFrame(fitBoard);
   });
 
   render();

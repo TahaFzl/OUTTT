@@ -106,36 +106,67 @@
 
   <!-- GAME -->
   <div id="screen-game" class="screen">
-    <div class="center-col game-col">
+    <div class="game-col">
       <div class="game-topbar">
         <button class="back-btn" id="back-game">‹ Menu</button>
         <div class="status-pill">
           <div id="status-dot" class="status-dot"></div>
           <div id="status-text" class="status-pill-text"></div>
+          <div id="turn-timer" class="turn-timer"></div>
         </div>
         <div id="mode-label" class="mode-label"></div>
       </div>
 
-      <div id="boards-container" class="boards-grid"></div>
+      <div class="game-layout">
+        <div class="game-main">
+          <div id="boards-container" class="boards-grid"></div>
 
-      <div class="player-chips">
-        <div id="x-chip" class="player-chip">
-          <div class="chip-mark" style="color:#0A84FF">✕</div>
-          <div id="x-label" class="chip-label">You</div>
+          <div class="player-chips">
+            <div id="x-chip" class="player-chip">
+              <div class="chip-mark" style="color:#0A84FF">✕</div>
+              <div id="x-label" class="chip-label">You</div>
+            </div>
+            <div class="chip-vs">vs</div>
+            <div id="o-chip" class="player-chip">
+              <div class="chip-mark" style="color:#FF453A">○</div>
+              <div id="o-label" class="chip-label">Computer</div>
+            </div>
+          </div>
+
+          <div id="rematch-incoming" class="rematch-request">
+            <span id="rematch-incoming-text">Opponent wants a rematch</span>
+            <div class="rematch-request-actions">
+              <button class="btn-secondary" id="rematch-decline">Decline</button>
+              <button class="btn-primary" id="rematch-accept">Accept</button>
+            </div>
+          </div>
+
+          <div class="game-actions">
+            <button class="btn-undo" id="undo-btn">Undo</button>
+            <button class="btn-rematch" id="rematch-btn">Rematch</button>
+            <button class="btn-new-game" id="new-game-btn">New Game</button>
+          </div>
+
+          <p class="game-hint">Your move decides which board your opponent plays in next. Win three small boards in a row to take the game.</p>
         </div>
-        <div class="chip-vs">vs</div>
-        <div id="o-chip" class="player-chip">
-          <div class="chip-mark" style="color:#FF453A">○</div>
-          <div id="o-label" class="chip-label">Computer</div>
+
+        <div class="game-side">
+          <div class="side-tabs">
+            <button class="side-tab active" id="tab-log" data-tab="log" type="button">Match Log</button>
+            <button class="side-tab" id="tab-chat" data-tab="chat" type="button">Chat</button>
+          </div>
+          <div id="panel-log" class="side-panel active">
+            <div id="log-list" class="log-list"></div>
+          </div>
+          <div id="panel-chat" class="side-panel">
+            <div id="chat-list" class="chat-list"></div>
+            <form id="chat-form" class="chat-form">
+              <input id="chat-input" class="chat-input" placeholder="Message…" maxlength="300" autocomplete="off" spellcheck="false">
+              <button type="submit" class="btn-chat-send">Send</button>
+            </form>
+          </div>
         </div>
       </div>
-
-      <div class="game-actions">
-        <button class="btn-undo" id="undo-btn">Undo</button>
-        <button class="btn-new-game" id="new-game-btn">New Game</button>
-      </div>
-
-      <p class="game-hint">Your move decides which board your opponent plays in next. Win three small boards in a row to take the game.</p>
     </div>
   </div>
 
