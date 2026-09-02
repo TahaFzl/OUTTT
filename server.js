@@ -9,9 +9,10 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 app.use(express.static('.'));
 
-const games = new Map(); 
-const waitingPlayers = new Set();
-const playerGames = new Map(); 
+const games = new Map();
+const rooms = new Map();
+const playerRooms = new Map();
+const playerGames = new Map();
 
 class Game {
     constructor(gameId, player1, player2) {
@@ -229,8 +230,11 @@ wss.on('connection', (ws) => {
 
 function handleMessage(ws, message) {
     switch (message.type) {
-        case 'findGame':
-            findGame(ws, message.playerId);
+        case 'createRoom':
+            createRoom(ws, message.playerId, message.roomCode);
+            break;
+        case 'joinRoom':
+            joinRoom(ws, message.playerId, message.roomCode);
             break;
         case 'makeMove':
             makeMove(ws, message);
@@ -241,28 +245,52 @@ function handleMessage(ws, message) {
     }
 }
 
-function findGame(ws, playerId) {
-    const player = { id: playerId, ws: ws };
-    
-    if (waitingPlayers.size > 0) {
-        const waitingPlayer = waitingPlayers.values().next().value;
-        waitingPlayers.delete(waitingPlayer);
-        
-        const gameId = generateGameId();
-        const game = new Game(gameId, waitingPlayer, player);
-        
-        games.set(gameId, game);
-        playerGames.set(waitingPlayer.id, gameId);
-        playerGames.set(player.id, gameId);
-        
-        console.log(`Game ${gameId} started with players ${waitingPlayer.id} and ${player.id}`);
-    } else {
-        waitingPlayers.add(player);
-        ws.send(JSON.stringify({
-            type: 'waiting',
-            message: 'Waiting for an opponent...'
-        }));
+function createRoom(ws, playerId, roomCode) {
+    if (!playerId || !roomCode) return;
+
+    if (rooms.has(roomCode)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'That room code is already in use. Try again.' }));
+        return;
     }
+
+    const player = { id: playerId, ws: ws };
+    rooms.set(roomCode, player);
+    playerRooms.set(playerId, roomCode);
+
+    ws.send(JSON.stringify({
+        type: 'waiting',
+        message: 'Waiting for an opponent...'
+    }));
+
+    console.log(`Room ${roomCode} opened by ${playerId}`);
+}
+
+function joinRoom(ws, playerId, roomCode) {
+    if (!playerId || !roomCode) return;
+
+    const host = rooms.get(roomCode);
+    if (!host) {
+        ws.send(JSON.stringify({ type: 'roomNotFound', message: 'That room code was not found.' }));
+        return;
+    }
+
+    if (host.id === playerId) {
+        ws.send(JSON.stringify({ type: 'error', message: "You can't join your own room." }));
+        return;
+    }
+
+    rooms.delete(roomCode);
+    playerRooms.delete(host.id);
+
+    const player = { id: playerId, ws: ws };
+    const gameId = roomCode + ':' + generateGameId();
+    const game = new Game(gameId, host, player);
+
+    games.set(gameId, game);
+    playerGames.set(host.id, gameId);
+    playerGames.set(player.id, gameId);
+
+    console.log(`Game ${gameId} started in room ${roomCode} with players ${host.id} and ${player.id}`);
 }
 
 function makeMove(ws, message) {
@@ -276,13 +304,14 @@ function makeMove(ws, message) {
 }
 
 function handleDisconnection(ws) {
-    for (const player of waitingPlayers) {
+    for (const [roomCode, player] of rooms) {
         if (player.ws === ws) {
-            waitingPlayers.delete(player);
+            rooms.delete(roomCode);
+            playerRooms.delete(player.id);
             break;
         }
     }
-    
+
     for (const [gameId, game] of games) {
         const disconnectedPlayer = game.players.find(p => p.ws === ws);
         if (disconnectedPlayer) {

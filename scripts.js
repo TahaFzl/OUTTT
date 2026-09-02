@@ -32,11 +32,104 @@ const state = Object.assign({
   joinCode: '',
   copied: false,
   waitTitle: 'Waiting for opponent…',
-  opponentName: 'Opponent'
+  opponentName: 'Opponent',
+  playerId: Math.random().toString(36).slice(2) + Date.now().toString(36),
+  mySymbol: 'X'
 }, freshGame());
 
 let aiTimer = null;
-let waitTimer = null;
+let socket = null;
+
+// ── Online connection ───────────────────────────────────────────────────────
+
+function wsURL() {
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  return proto + location.host + '/ws';
+}
+
+function sendMessage(msg) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(msg));
+  }
+}
+
+function closeSocket() {
+  if (socket) {
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.close();
+    socket = null;
+  }
+}
+
+function connectSocket(onOpen) {
+  closeSocket();
+  socket = new WebSocket(wsURL());
+  socket.onopen = () => onOpen();
+  socket.onmessage = (evt) => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch (e) { return; }
+    handleServerMessage(msg);
+  };
+  socket.onclose = () => {
+    if (state.mode === 'online' && (state.screen === 'game' || state.screen === 'waiting') && !state.winner) {
+      alert('Connection to the server was lost.');
+      goHome();
+    }
+  };
+  socket.onerror = () => {};
+}
+
+function applyServerGameState(gs) {
+  const cells = Array(81).fill(null);
+  for (let b = 0; b < 9; b++) {
+    for (let c = 0; c < 9; c++) {
+      cells[b * 9 + c] = gs.smallBoards[b][c] || null;
+    }
+  }
+  state.cells = cells;
+  state.winners = gs.smallBoardWinners.map(w => (w === '' ? null : (w === 'tie' ? 'D' : w)));
+  state.active = gs.activeBoard;
+  state.turn = gs.currentPlayer || state.turn;
+  state.winner = gs.gameOver ? (gs.winner === 'tie' ? 'D' : gs.winner) : null;
+}
+
+function handleServerMessage(msg) {
+  switch (msg.type) {
+    case 'waiting':
+      state.waitTitle = 'Waiting for opponent…';
+      render();
+      break;
+    case 'gameStart':
+      clearTimeout(aiTimer);
+      applyServerGameState(msg.gameState);
+      state.mySymbol = msg.playerSymbol;
+      state.opponentName = 'Opponent';
+      state.last = null;
+      state.mode = 'online';
+      state.screen = 'game';
+      render();
+      break;
+    case 'move':
+      applyServerGameState(msg.gameState);
+      state.last = msg.boardIndex * 9 + msg.cellIndex;
+      render();
+      break;
+    case 'playerDisconnected':
+      alert(msg.message || 'Your opponent has disconnected.');
+      goHome();
+      break;
+    case 'roomNotFound':
+    case 'error':
+      alert(msg.message || 'Something went wrong.');
+      closeSocket();
+      state.screen = 'lobby';
+      render();
+      break;
+  }
+}
 
 // ── Game logic ──────────────────────────────────────────────────────────────
 
@@ -62,6 +155,14 @@ function legalMoves(cells, winners, active) {
 function play(b, c, fromAI) {
   const s = state;
   if (s.winner) return;
+  if (s.mode === 'online') {
+    if (fromAI) return;
+    if (s.turn !== s.mySymbol) return;
+    if (s.winners[b] || s.cells[b * 9 + c]) return;
+    if (s.active !== null && s.active !== b) return;
+    sendMessage({ type: 'makeMove', playerId: s.playerId, boardIndex: b, cellIndex: c });
+    return;
+  }
   const aiSide = s.mode === 'local' ? null : 'O';
   if (aiSide && s.turn === aiSide && !fromAI) return;
   if (s.winners[b] || s.cells[b * 9 + c]) return;
@@ -169,7 +270,7 @@ function aiMove() {
 
 function startGame(mode, extra) {
   clearTimeout(aiTimer);
-  clearTimeout(waitTimer);
+  if (mode !== 'online') closeSocket();
   Object.assign(state, { screen: 'game', mode }, freshGame(), extra || {});
   render();
 }
@@ -194,12 +295,13 @@ function undoMove() {
 
 function goHome() {
   clearTimeout(aiTimer);
-  clearTimeout(waitTimer);
-  Object.assign(state, { screen: 'home', roomCode: makeCode(), joinCode: '', copied: false });
+  closeSocket();
+  Object.assign(state, { screen: 'home', roomCode: makeCode(), joinCode: '', copied: false, mySymbol: 'X' });
   render();
 }
 
 function goLobby() {
+  closeSocket();
   state.screen = 'lobby';
   state.roomCode = makeCode();
   state.copied = false;
@@ -211,18 +313,6 @@ function copyRoomCode() {
   state.copied = true;
   render();
   setTimeout(() => { state.copied = false; render(); }, 1600);
-}
-
-function waitForOpponent(title, name) {
-  clearTimeout(waitTimer);
-  state.screen = 'waiting';
-  state.waitTitle = title;
-  render();
-  waitTimer = setTimeout(() => {
-    state.waitTitle = name + ' joined';
-    render();
-    waitTimer = setTimeout(() => startGame('online', { opponentName: name }), 900);
-  }, 2400);
 }
 
 // ── Render ───────────────────────────────────────────────────────────────────
@@ -265,16 +355,20 @@ function renderGame() {
     : (s.turn === 'X' ? X : O);
 
   const remote = s.mode !== 'local';
+  const mySymbol = s.mode === 'online' ? s.mySymbol : 'X';
+  const oppSymbol = mySymbol === 'X' ? 'O' : 'X';
   let statusText;
   if (s.winner === 'D') {
     statusText = 'Draw';
   } else if (s.winner) {
-    statusText = s.winner === 'X'
-      ? (remote ? 'You win' : 'X wins')
-      : (remote
-          ? (s.mode === 'online' ? s.opponentName + ' wins' : 'Computer wins')
-          : 'O wins');
-  } else if (remote && s.turn === 'O') {
+    if (!remote) {
+      statusText = s.winner + ' wins';
+    } else if (s.winner === mySymbol) {
+      statusText = 'You win';
+    } else {
+      statusText = s.mode === 'online' ? s.opponentName + ' wins' : 'Computer wins';
+    }
+  } else if (remote && s.turn === oppSymbol) {
     statusText = s.mode === 'online' ? s.opponentName + ' is playing…' : 'Computer is thinking…';
   } else {
     statusText = (remote ? 'Your turn' : s.turn + '’s turn')
@@ -298,11 +392,16 @@ function renderGame() {
   xChip.style.boxShadow = xOn ? chipRing : 'none';
   oChip.style.background = oOn ? '#1C1C1E' : 'transparent';
   oChip.style.boxShadow = oOn ? chipRing : 'none';
-  document.getElementById('x-label').textContent = s.mode === 'local' ? 'Player 1' : 'You';
+  const oppLabel = s.mode === 'online' ? s.opponentName : 'Computer';
+  document.getElementById('x-label').textContent =
+    s.mode === 'local' ? 'Player 1' : (mySymbol === 'X' ? 'You' : oppLabel);
   document.getElementById('o-label').textContent =
-    s.mode === 'local' ? 'Player 2'
-    : s.mode === 'online' ? s.opponentName
-    : 'Computer';
+    s.mode === 'local' ? 'Player 2' : (mySymbol === 'O' ? 'You' : oppLabel);
+
+  const undoBtn = document.getElementById('undo-btn');
+  undoBtn.style.opacity = s.mode === 'online' ? '0.35' : '1';
+  undoBtn.style.pointerEvents = s.mode === 'online' ? 'none' : 'auto';
+  document.getElementById('new-game-btn').textContent = s.mode === 'online' ? 'Leave Game' : 'New Game';
 
   renderBoards();
 }
@@ -390,7 +489,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('back-lobby').addEventListener('click', goHome);
   document.getElementById('copy-btn').addEventListener('click', copyRoomCode);
   document.getElementById('open-room-btn').addEventListener('click', () => {
-    waitForOpponent('Waiting for opponent…', 'Ari');
+    state.waitTitle = 'Waiting for opponent…';
+    state.screen = 'waiting';
+    render();
+    connectSocket(() => {
+      sendMessage({ type: 'createRoom', playerId: state.playerId, roomCode: state.roomCode });
+    });
   });
   document.getElementById('join-input').addEventListener('input', e => {
     state.joinCode = e.target.value.toUpperCase();
@@ -401,7 +505,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (code.length < 5) return;
     const pretty = code.slice(0, 3) + '-' + code.slice(3, 6);
     state.roomCode = pretty;
-    waitForOpponent('Connecting to ' + pretty + '…', 'Jamie');
+    state.waitTitle = 'Connecting to ' + pretty + '…';
+    state.screen = 'waiting';
+    render();
+    connectSocket(() => {
+      sendMessage({ type: 'joinRoom', playerId: state.playerId, roomCode: pretty });
+    });
   });
 
   // Waiting
@@ -409,8 +518,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Game
   document.getElementById('back-game').addEventListener('click', goHome);
-  document.getElementById('undo-btn').addEventListener('click', undoMove);
-  document.getElementById('new-game-btn').addEventListener('click', resetGame);
+  document.getElementById('undo-btn').addEventListener('click', () => {
+    if (state.mode !== 'online') undoMove();
+  });
+  document.getElementById('new-game-btn').addEventListener('click', () => {
+    if (state.mode === 'online') goHome();
+    else resetGame();
+  });
 
   // Board cell clicks (event delegation)
   document.getElementById('boards-container').addEventListener('click', e => {
