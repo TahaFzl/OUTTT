@@ -1,671 +1,425 @@
-class UltimateTicTacToe {
-    constructor() {
-        this.currentPlayer = 'X';
-        this.activeBoard = null;
-        this.gameOver = false;
-        this.winner = null;
-        this.isMultiplayer = false;
-        this.playerId = this.generatePlayerId();
-        this.playerSymbol = null;
-        this.opponentSymbol = null;
-        this.isMyTurn = false;
-        this.gameId = null;
-        this.socket = null;
-        this.connectionStatus = 'disconnected';
-        
-        this.smallBoards = Array(9).fill(null).map(() => Array(9).fill(''));
-        this.smallBoardWinners = Array(9).fill(''); 
-        this.mainBoard = Array(9).fill('');
-        
-        this.initializeDOM();
-        this.createGameBoard();
-        this.attachEventListeners();
-        this.showGameModeSelection();
-    }
-
-    initializeDOM() {
-        this.elements = {
-            ultimateBoard: document.getElementById('ultimateBoard'),
-            currentPlayerSymbol: document.getElementById('currentPlayerSymbol'),
-            currentPlayerText: document.querySelector('.current-player'),
-            gameStatus: document.getElementById('gameStatus'),
-            statusText: document.querySelector('.status-text'),
-            resetBtn: document.getElementById('resetGame'),
-            gameOverlay: document.getElementById('gameOverlay'),
-            winnerText: document.getElementById('winnerText'),
-            winnerSubtext: document.getElementById('winnerSubtext'),
-            playAgainBtn: document.getElementById('playAgain')
-        };
-    }
-
-    generatePlayerId() {
-        return 'player_' + Math.random().toString(36).substring(2, 15);
-    }
-
-    showGameModeSelection() {
-        const modeOverlay = document.createElement('div');
-        modeOverlay.className = 'game-overlay active';
-        modeOverlay.innerHTML = `
-            <div class="overlay-content">
-                <div class="mode-selection">
-                    <i class="fas fa-gamepad"></i>
-                    <h2>Choose Game Mode</h2>
-                    <p>Select how you want to play Ultimate Tic-Tac-Toe</p>
-                    <div class="mode-buttons">
-                        <button class="mode-btn" id="singlePlayerMode">
-                            <i class="fas fa-user"></i>
-                            <span>Single Player</span>
-                            <small>Play locally with a friend</small>
-                        </button>
-                        <button class="mode-btn primary" id="multiPlayerMode">
-                            <i class="fas fa-users"></i>
-                            <span>Multiplayer</span>
-                            <small>Play online with another player</small>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modeOverlay);
-        
-        document.getElementById('singlePlayerMode').addEventListener('click', () => {
-            this.startSinglePlayerMode();
-            document.body.removeChild(modeOverlay);
-        });
-        
-        document.getElementById('multiPlayerMode').addEventListener('click', () => {
-            this.startMultiPlayerMode();
-            document.body.removeChild(modeOverlay);
-        });
-    }
-
-    startSinglePlayerMode() {
-        this.isMultiplayer = false;
-        this.updateGameStatus();
-    }
-
-    startMultiPlayerMode() {
-        this.isMultiplayer = true;
-        this.connectToServer();
-    }
-
-    connectToServer() {
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
-        
-        this.socket = new WebSocket(wsUrl);
-        
-        this.socket.onopen = () => {
-            console.log('Connected to game server');
-            this.connectionStatus = 'connected';
-            this.findGame();
-        };
-        
-        this.socket.onmessage = (event) => {
-            const message = JSON.parse(event.data);
-            this.handleServerMessage(message);
-        };
-        
-        this.socket.onclose = () => {
-            console.log('Disconnected from game server');
-            this.connectionStatus = 'disconnected';
-            this.showConnectionError();
-        };
-        
-        this.socket.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            this.showConnectionError();
-        };
-        
-        setInterval(() => {
-            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                this.socket.send(JSON.stringify({ type: 'ping' }));
-            }
-        }, 30000);
-    }
-
-    findGame() {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({
-                type: 'findGame',
-                playerId: this.playerId
-            }));
-            
-            this.showWaitingMessage();
-        }
-    }
-
-    showWaitingMessage() {
-        this.elements.statusText.textContent = 'Searching for an opponent...';
-        this.elements.gameStatus.classList.add('active');
-    }
-
-    showConnectionError() {
-        this.elements.statusText.textContent = 'Connection lost. Please refresh the page.';
-        this.elements.gameStatus.classList.add('active');
-    }
-
-    handleServerMessage(message) {
-        switch (message.type) {
-            case 'waiting':
-                this.elements.statusText.textContent = message.message;
-                break;
-                
-            case 'gameStart':
-                this.handleGameStart(message);
-                break;
-                
-            case 'move':
-                this.handleOpponentMove(message);
-                break;
-                
-            case 'playerDisconnected':
-                this.handlePlayerDisconnected(message);
-                break;
-                
-            case 'pong':
-                break;
-        }
-    }
-
-    handleGameStart(message) {
-        this.gameId = message.gameId;
-        this.playerSymbol = message.playerSymbol;
-        this.opponentSymbol = message.opponentSymbol;
-        this.currentPlayer = message.currentPlayer;
-        this.isMyTurn = this.playerSymbol === this.currentPlayer;
-        
-        this.applyGameState(message.gameState);
-        
-        this.elements.statusText.textContent = this.isMyTurn ? 
-            `Your turn (${this.playerSymbol})` : 
-            `Opponent's turn (${this.opponentSymbol})`;
-    }
-
-    handleOpponentMove(message) {
-        this.smallBoards[message.boardIndex][message.cellIndex] = message.symbol;
-        
-        const cell = document.querySelector(
-            `[data-board-index="${message.boardIndex}"][data-cell-index="${message.cellIndex}"]`
-        );
-        cell.textContent = message.symbol;
-        cell.classList.add(message.symbol.toLowerCase());
-        cell.classList.add('disabled');
-        
-        this.applyGameState(message.gameState);
-        
-        this.currentPlayer = message.currentPlayer;
-        this.isMyTurn = this.playerSymbol === this.currentPlayer;
-        
-        if (message.gameOver) {
-            this.handleGameEnd(message.winner);
-        } else {
-            this.updateDisplay();
-        }
-    }
-
-    handlePlayerDisconnected(message) {
-        this.elements.statusText.textContent = message.message;
-        this.gameOver = true;
-        this.disableAllCells();
-    }
-
-    applyGameState(gameState) {
-        this.smallBoards = gameState.smallBoards;
-        this.smallBoardWinners = gameState.smallBoardWinners;
-        this.activeBoard = gameState.activeBoard;
-        this.currentPlayer = gameState.currentPlayer;
-        this.gameOver = gameState.gameOver;
-        this.winner = gameState.winner;
-        
-        this.updateBoardFromState();
-        this.updateDisplay();
-    }
-
-    updateBoardFromState() {
-        for (let boardIndex = 0; boardIndex < 9; boardIndex++) {
-            for (let cellIndex = 0; cellIndex < 9; cellIndex++) {
-                const cell = document.querySelector(
-                    `[data-board-index="${boardIndex}"][data-cell-index="${cellIndex}"]`
-                );
-                const value = this.smallBoards[boardIndex][cellIndex];
-                
-                if (value) {
-                    cell.textContent = value;
-                    cell.classList.add(value.toLowerCase());
-                    cell.classList.add('disabled');
-                }
-            }
-            
-            const winner = this.smallBoardWinners[boardIndex];
-            if (winner) {
-                this.updateSmallBoardDisplay(boardIndex, winner);
-            }
-        }
-    }
-
-    handleGameEnd(winner) {
-        this.gameOver = true;
-        this.winner = winner;
-        this.isMyTurn = false;
-        
-        this.disableAllCells();
-        this.updateDisplay();
-        this.showGameOverScreen();
-    }
-
-    disableAllCells() {
-        const allCells = document.querySelectorAll('.board-cell');
-        allCells.forEach(cell => cell.classList.add('disabled'));
-        
-        const allBoards = document.querySelectorAll('.small-board');
-        allBoards.forEach(board => board.classList.remove('active'));
-    }
-
-    createGameBoard() {
-        this.elements.ultimateBoard.innerHTML = '';
-        
-        for (let boardIndex = 0; boardIndex < 9; boardIndex++) {
-            const smallBoard = this.createSmallBoard(boardIndex);
-            this.elements.ultimateBoard.appendChild(smallBoard);
-        }
-    }
-
-    createSmallBoard(boardIndex) {
-        const boardContainer = document.createElement('div');
-        boardContainer.className = 'small-board';
-        boardContainer.dataset.boardIndex = boardIndex;
-
-        const boardGrid = document.createElement('div');
-        boardGrid.className = 'board-grid';
-
-        for (let cellIndex = 0; cellIndex < 9; cellIndex++) {
-            const cell = document.createElement('div');
-            cell.className = 'board-cell';
-            cell.dataset.boardIndex = boardIndex;
-            cell.dataset.cellIndex = cellIndex;
-            
-            cell.addEventListener('click', (e) => this.handleCellClick(e));
-            
-            boardGrid.appendChild(cell);
-        }
-
-        boardContainer.appendChild(boardGrid);
-        return boardContainer;
-    }
-
-    attachEventListeners() {
-        this.elements.resetBtn.addEventListener('click', () => this.resetGame());
-        this.elements.playAgainBtn.addEventListener('click', () => this.resetGame());
-        
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'r' || e.key === 'R') {
-                this.resetGame();
-            }
-        });
-    }
-
-    handleCellClick(event) {
-        if (this.gameOver) return;
-
-        const boardIndex = parseInt(event.target.dataset.boardIndex);
-        const cellIndex = parseInt(event.target.dataset.cellIndex);
-
-        if (this.isMultiplayer && !this.isMyTurn) {
-            this.showInvalidMoveAnimation(event.target);
-            return;
-        }
-
-        if (!this.isValidMove(boardIndex, cellIndex)) {
-            this.showInvalidMoveAnimation(event.target);
-            return;
-        }
-
-        if (this.isMultiplayer) {
-            this.sendMoveToServer(boardIndex, cellIndex);
-        } else {
-            this.makeMove(boardIndex, cellIndex);
-            this.updateDisplay();
-            this.checkGameState();
-        }
-    }
-
-    sendMoveToServer(boardIndex, cellIndex) {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({
-                type: 'makeMove',
-                playerId: this.playerId,
-                boardIndex: boardIndex,
-                cellIndex: cellIndex
-            }));
-        }
-    }
-
-    isValidMove(boardIndex, cellIndex) {
-        if (this.smallBoards[boardIndex][cellIndex] !== '') {
-            return false;
-        }
-
-        if (this.smallBoardWinners[boardIndex] !== '') {
-            return false;
-        }
-
-        if (this.activeBoard !== null && this.activeBoard !== boardIndex) {
-            return false;
-        }
-
-        return true;
-    }
-
-    makeMove(boardIndex, cellIndex) {
-        this.smallBoards[boardIndex][cellIndex] = this.currentPlayer;
-        
-        const cell = document.querySelector(
-            `[data-board-index="${boardIndex}"][data-cell-index="${cellIndex}"]`
-        );
-        cell.textContent = this.currentPlayer;
-        cell.classList.add(this.currentPlayer.toLowerCase());
-        cell.classList.add('disabled');
-        
-        this.animateCellPlacement(cell);
-
-        const smallBoardWinner = this.checkSmallBoardWinner(boardIndex);
-        if (smallBoardWinner) {
-            this.smallBoardWinners[boardIndex] = smallBoardWinner;
-            this.updateSmallBoardDisplay(boardIndex, smallBoardWinner);
-        } else if (this.isSmallBoardFull(boardIndex)) {
-            this.smallBoardWinners[boardIndex] = 'tie';
-            this.updateSmallBoardDisplay(boardIndex, 'tie');
-        }
-
-        this.setNextActiveBoard(cellIndex);
-
-        this.currentPlayer = this.currentPlayer === 'X' ? 'O' : 'X';
-    }
-
-    checkSmallBoardWinner(boardIndex) {
-        const board = this.smallBoards[boardIndex];
-        const winPatterns = [
-            [0, 1, 2], [3, 4, 5], [6, 7, 8],
-            [0, 3, 6], [1, 4, 7], [2, 5, 8], 
-            [0, 4, 8], [2, 4, 6]
-        ];
-
-        for (const pattern of winPatterns) {
-            const [a, b, c] = pattern;
-            if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-                return board[a];
-            }
-        }
-
-        return null;
-    }
-
-    isSmallBoardFull(boardIndex) {
-        return this.smallBoards[boardIndex].every(cell => cell !== '');
-    }
-
-    updateSmallBoardDisplay(boardIndex, result) {
-        const boardElement = document.querySelector(`[data-board-index="${boardIndex}"]`);
-        
-        if (result === 'tie') {
-            boardElement.classList.add('tied');
-        } else {
-            boardElement.classList.add(`won-${result.toLowerCase()}`);
-        }
-
-        const overlay = document.createElement('div');
-        overlay.className = `win-overlay ${result === 'tie' ? 'tie' : result.toLowerCase()}`;
-        overlay.textContent = result === 'tie' ? 'TIE' : result;
-        boardElement.appendChild(overlay);
-
-        const cells = boardElement.querySelectorAll('.board-cell');
-        cells.forEach(cell => cell.classList.add('disabled'));
-    }
-
-    setNextActiveBoard(cellIndex) {
-        if (this.smallBoardWinners[cellIndex] !== '') {
-            this.activeBoard = null;
-        } else {
-            this.activeBoard = cellIndex;
-        }
-    }
-
-    updateDisplay() {
-        this.updatePlayerIndicator();
-        this.updateBoardHighlights();
-        this.updateGameStatus();
-    }
-
-    updatePlayerIndicator() {
-        this.elements.currentPlayerSymbol.textContent = this.currentPlayer;
-        this.elements.currentPlayerSymbol.className = 
-            `player-symbol ${this.currentPlayer === 'O' ? 'player-o' : ''}`;
-        this.elements.currentPlayerText.textContent = `Player ${this.currentPlayer}'s Turn`;
-    }
-
-    updateBoardHighlights() {
-        const allBoards = document.querySelectorAll('.small-board');
-        
-        allBoards.forEach((board, index) => {
-            board.classList.remove('active');
-            
-            if (this.smallBoardWinners[index] === '') {
-                if (this.activeBoard === null || this.activeBoard === index) {
-                    board.classList.add('active');
-                }
-            }
-        });
-    }
-
-    updateGameStatus() {
-        let statusMessage = '';
-        
-        if (this.gameOver) {
-            if (this.winner === 'tie') {
-                statusMessage = "Game ended in a tie!";
-            } else if (this.isMultiplayer) {
-                statusMessage = this.winner === this.playerSymbol ? 
-                    `You win! (${this.winner})` : 
-                    `You lose! (${this.winner} wins)`;
-            } else {
-                statusMessage = `Player ${this.winner} wins the game!`;
-            }
-        } else if (this.isMultiplayer) {
-            if (this.isMyTurn) {
-                statusMessage = this.activeBoard === null ? 
-                    `Your turn (${this.playerSymbol}) - Choose any available board` :
-                    `Your turn (${this.playerSymbol}) - Play on the highlighted board`;
-            } else {
-                statusMessage = `Opponent's turn (${this.opponentSymbol})`;
-            }
-        } else {
-            if (this.activeBoard === null) {
-                statusMessage = `Player ${this.currentPlayer} can choose any available board`;
-            } else {
-                statusMessage = `Player ${this.currentPlayer} must play on the highlighted board`;
-            }
-        }
-
-        this.elements.statusText.textContent = statusMessage;
-        
-        if (this.activeBoard !== null || this.gameOver || this.isMultiplayer) {
-            this.elements.gameStatus.classList.add('active');
-        } else {
-            this.elements.gameStatus.classList.remove('active');
-        }
-    }
-
-    checkGameState() {
-        const mainWinner = this.checkMainBoardWinner();
-        if (mainWinner) {
-            this.endGame(mainWinner);
-            return;
-        }
-
-        if (this.isMainBoardFull()) {
-            this.endGame('tie');
-            return;
-        }
-    }
-
-    checkMainBoardWinner() {
-        const winPatterns = [
-            [0, 1, 2], [3, 4, 5], [6, 7, 8],
-            [0, 3, 6], [1, 4, 7], [2, 5, 8], 
-            [0, 4, 8], [2, 4, 6]
-        ];
-
-        for (const pattern of winPatterns) {
-            const [a, b, c] = pattern;
-            const winnerA = this.smallBoardWinners[a];
-            const winnerB = this.smallBoardWinners[b];
-            const winnerC = this.smallBoardWinners[c];
-
-            if (winnerA && winnerA !== 'tie' && winnerA === winnerB && winnerA === winnerC) {
-                return winnerA;
-            }
-        }
-
-        return null;
-    }
-
-    isMainBoardFull() {
-        return this.smallBoardWinners.every(winner => winner !== '');
-    }
-
-    endGame(winner) {
-        this.gameOver = true;
-        this.winner = winner;
-        this.activeBoard = null;
-
-        const allCells = document.querySelectorAll('.board-cell:not(.disabled)');
-        allCells.forEach(cell => cell.classList.add('disabled'));
-
-        const allBoards = document.querySelectorAll('.small-board');
-        allBoards.forEach(board => board.classList.remove('active'));
-
-        this.showGameOverScreen();
-        this.updateGameStatus();
-    }
-
-    showGameOverScreen() {
-        if (this.winner === 'tie') {
-            this.elements.winnerText.textContent = "It's a Tie!";
-            this.elements.winnerSubtext.textContent = "Great game! Try again?";
-        } else if (this.isMultiplayer) {
-            if (this.winner === this.playerSymbol) {
-                this.elements.winnerText.textContent = "You Win!";
-                this.elements.winnerSubtext.textContent = "Excellent strategy! Well played!";
-            } else {
-                this.elements.winnerText.textContent = "You Lose!";
-                this.elements.winnerSubtext.textContent = "Good game! Better luck next time!";
-            }
-        } else {
-            this.elements.winnerText.textContent = `Player ${this.winner} Wins!`;
-            this.elements.winnerSubtext.textContent = "Congratulations on your victory!";
-        }
-
-        setTimeout(() => {
-            this.elements.gameOverlay.classList.add('active');
-        }, 1000);
-    }
-
-    resetGame() {
-        this.currentPlayer = 'X';
-        this.activeBoard = null;
-        this.gameOver = false;
-        this.winner = null;
-        this.smallBoards = Array(9).fill(null).map(() => Array(9).fill(''));
-        this.smallBoardWinners = Array(9).fill('');
-        this.mainBoard = Array(9).fill('');
-
-        this.elements.gameOverlay.classList.remove('active');
-
-        if (this.isMultiplayer) {
-            if (this.socket) {
-                this.socket.close();
-            }
-            this.isMultiplayer = false;
-            this.playerSymbol = null;
-            this.opponentSymbol = null;
-            this.isMyTurn = false;
-            this.gameId = null;
-            this.socket = null;
-            this.showGameModeSelection();
-        } else {
-            this.createGameBoard();
-            this.updateDisplay();
-            this.animateReset();
-        }
-    }
-
-    showInvalidMoveAnimation(cell) {
-        cell.style.animation = 'none';
-        cell.offsetHeight; 
-        cell.style.animation = 'shake 0.5s ease-in-out';
-        
-        setTimeout(() => {
-            cell.style.animation = '';
-        }, 500);
-    }
-
-    animateCellPlacement(cell) {
-        cell.style.transform = 'scale(0)';
-        cell.style.transition = 'transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55)';
-        
-        requestAnimationFrame(() => {
-            cell.style.transform = 'scale(1)';
-        });
-
-        setTimeout(() => {
-            cell.style.transition = '';
-            cell.style.transform = '';
-        }, 300);
-    }
-
-    animateReset() {
-        const allBoards = document.querySelectorAll('.small-board');
-        allBoards.forEach((board, index) => {
-            board.style.opacity = '0';
-            board.style.transform = 'scale(0.8)';
-            
-            setTimeout(() => {
-                board.style.transition = 'all 0.3s ease-out';
-                board.style.opacity = '1';
-                board.style.transform = 'scale(1)';
-                
-                setTimeout(() => {
-                    board.style.transition = '';
-                    board.style.transform = '';
-                    board.style.opacity = '';
-                }, 300);
-            }, index * 50);
-        });
-    }
+'use strict';
+
+const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const X_COLOR = '#0A84FF';
+const O_COLOR = '#FF453A';
+const TINT_X = 'rgba(10,132,255,0.16)';
+const TINT_O = 'rgba(255,69,58,0.16)';
+
+function makeCode() {
+  let s = '';
+  for (let i = 0; i < 6; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+  return s.slice(0, 3) + '-' + s.slice(3);
 }
 
-
-const shakeAnimation = `
-@keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-    20%, 40%, 60%, 80% { transform: translateX(5px); }
+function freshGame() {
+  return {
+    cells: Array(81).fill(null),
+    winners: Array(9).fill(null),
+    turn: 'X',
+    active: null,
+    winner: null,
+    last: null,
+    history: []
+  };
 }
-`;
 
-const styleSheet = document.createElement('style');
-styleSheet.textContent = shakeAnimation;
-document.head.appendChild(styleSheet);
+const state = Object.assign({
+  screen: 'home',
+  mode: 'cpu',
+  roomCode: makeCode(),
+  joinCode: '',
+  copied: false,
+  waitTitle: 'Waiting for opponent…',
+  opponentName: 'Opponent'
+}, freshGame());
+
+let aiTimer = null;
+let waitTimer = null;
+
+// ── Game logic ──────────────────────────────────────────────────────────────
+
+function lineWinner(g) {
+  for (const [a, b, c] of LINES) {
+    if (g[a] && g[a] !== 'D' && g[a] === g[b] && g[a] === g[c]) return g[a];
+  }
+  return null;
+}
+
+function legalMoves(cells, winners, active) {
+  const out = [];
+  for (let b = 0; b < 9; b++) {
+    if (winners[b]) continue;
+    if (active !== null && active !== b) continue;
+    for (let c = 0; c < 9; c++) {
+      if (!cells[b * 9 + c]) out.push([b, c]);
+    }
+  }
+  return out;
+}
+
+function play(b, c, fromAI) {
+  const s = state;
+  if (s.winner) return;
+  const aiSide = s.mode === 'local' ? null : 'O';
+  if (aiSide && s.turn === aiSide && !fromAI) return;
+  if (s.winners[b] || s.cells[b * 9 + c]) return;
+  if (s.active !== null && s.active !== b) return;
+
+  const snapshot = {
+    cells: s.cells.slice(),
+    winners: s.winners.slice(),
+    turn: s.turn,
+    active: s.active,
+    winner: s.winner,
+    last: s.last
+  };
+
+  const cells = s.cells.slice();
+  cells[b * 9 + c] = s.turn;
+
+  const winners = s.winners.slice();
+  const sub = cells.slice(b * 9, b * 9 + 9);
+  const w = lineWinner(sub);
+  if (w) winners[b] = w;
+  else if (sub.every(Boolean)) winners[b] = 'D';
+
+  const gameWinner = lineWinner(winners);
+  const nextSub = cells.slice(c * 9, c * 9 + 9);
+  const active = (winners[c] || nextSub.every(Boolean)) ? null : c;
+  const done = gameWinner || winners.every(Boolean);
+
+  s.cells = cells;
+  s.winners = winners;
+  s.turn = s.turn === 'X' ? 'O' : 'X';
+  s.active = active;
+  s.winner = gameWinner || (winners.every(Boolean) ? 'D' : null);
+  s.last = b * 9 + c;
+  s.history = s.history.concat([snapshot]);
+
+  render();
+
+  if (!done && s.mode !== 'local' && s.turn === 'O') {
+    clearTimeout(aiTimer);
+    aiTimer = setTimeout(aiMove, 420);
+  }
+}
+
+function scoreMove([b, c], cells, winners) {
+  let s = Math.random() * 3;
+  const nc = cells.slice();
+  nc[b * 9 + c] = 'O';
+  const nw = winners.slice();
+  const sub = nc.slice(b * 9, b * 9 + 9);
+  const w = lineWinner(sub);
+  if (w) nw[b] = w; else if (sub.every(Boolean)) nw[b] = 'D';
+
+  if (nw[b] === 'O') {
+    if (lineWinner(nw) === 'O') return 1e6;
+    s += 60;
+    if (b === 4) s += 12;
+  }
+  const alt = cells.slice();
+  alt[b * 9 + c] = 'X';
+  if (lineWinner(alt.slice(b * 9, b * 9 + 9)) === 'X') s += 45;
+
+  if (b === 4) s += 6;
+  if (c === 4) s += 5;
+  else if ([0, 2, 6, 8].includes(c)) s += 2;
+
+  const nextSub = nc.slice(c * 9, c * 9 + 9);
+  if (nw[c] || nextSub.every(Boolean)) {
+    s -= 25;
+  } else {
+    let threat = false;
+    for (const [p, q, r] of LINES) {
+      const v = [nextSub[p], nextSub[q], nextSub[r]];
+      if (v.filter(x => x === 'X').length === 2 && v.filter(x => !x).length === 1) {
+        threat = true;
+        break;
+      }
+    }
+    if (threat) {
+      s -= 35;
+      const w2 = nw.slice();
+      w2[c] = 'X';
+      if (lineWinner(w2) === 'X') s -= 500;
+    }
+  }
+  return s;
+}
+
+function aiMove() {
+  const { cells, winners, active, winner } = state;
+  if (winner) return;
+  const moves = legalMoves(cells, winners, active);
+  if (!moves.length) return;
+  let best = -Infinity, pick = [];
+  for (const m of moves) {
+    const v = scoreMove(m, cells, winners);
+    if (v > best) { best = v; pick = [m]; }
+    else if (v === best) pick.push(m);
+  }
+  const [b, c] = pick[Math.floor(Math.random() * pick.length)];
+  play(b, c, true);
+}
+
+// ── Navigation ───────────────────────────────────────────────────────────────
+
+function startGame(mode, extra) {
+  clearTimeout(aiTimer);
+  clearTimeout(waitTimer);
+  Object.assign(state, { screen: 'game', mode }, freshGame(), extra || {});
+  render();
+}
+
+function resetGame() {
+  clearTimeout(aiTimer);
+  Object.assign(state, freshGame());
+  render();
+}
+
+function undoMove() {
+  clearTimeout(aiTimer);
+  const h = state.history.slice();
+  let n = state.mode !== 'local' && h.length > 1 ? 2 : 1;
+  let snap = null;
+  while (n-- > 0 && h.length) snap = h.pop();
+  if (snap) {
+    Object.assign(state, snap, { history: h });
+    render();
+  }
+}
+
+function goHome() {
+  clearTimeout(aiTimer);
+  clearTimeout(waitTimer);
+  Object.assign(state, { screen: 'home', roomCode: makeCode(), joinCode: '', copied: false });
+  render();
+}
+
+function goLobby() {
+  state.screen = 'lobby';
+  state.roomCode = makeCode();
+  state.copied = false;
+  render();
+}
+
+function copyRoomCode() {
+  if (navigator.clipboard) navigator.clipboard.writeText(state.roomCode).catch(() => {});
+  state.copied = true;
+  render();
+  setTimeout(() => { state.copied = false; render(); }, 1600);
+}
+
+function waitForOpponent(title, name) {
+  clearTimeout(waitTimer);
+  state.screen = 'waiting';
+  state.waitTitle = title;
+  render();
+  waitTimer = setTimeout(() => {
+    state.waitTitle = name + ' joined';
+    render();
+    waitTimer = setTimeout(() => startGame('online', { opponentName: name }), 900);
+  }, 2400);
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+
+function render() {
+  // Switch screens
+  document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+  const screenEl = document.getElementById('screen-' + state.screen);
+  if (screenEl) screenEl.classList.add('active');
+
+  if (state.screen === 'lobby') renderLobby();
+  else if (state.screen === 'waiting') renderWaiting();
+  else if (state.screen === 'game') renderGame();
+}
+
+function renderLobby() {
+  document.getElementById('room-code-display').textContent = state.roomCode;
+  document.getElementById('copy-btn').textContent = state.copied ? 'Copied' : 'Copy Code';
+
+  const joinInput = document.getElementById('join-input');
+  if (joinInput.value !== state.joinCode) joinInput.value = state.joinCode;
+
+  const code = state.joinCode.replace(/[^A-Za-z0-9]/g, '');
+  document.getElementById('join-btn').style.opacity = code.length >= 5 ? '1' : '0.4';
+}
+
+function renderWaiting() {
+  document.getElementById('wait-title').textContent = state.waitTitle;
+  document.getElementById('wait-room').textContent = 'Room ' + state.roomCode;
+}
+
+function renderGame() {
+  const s = state;
+  const X = X_COLOR;
+  const O = O_COLOR;
+
+  // Status pill
+  const turnColor = s.winner
+    ? (s.winner === 'D' ? '#98989D' : (s.winner === 'X' ? X : O))
+    : (s.turn === 'X' ? X : O);
+
+  const remote = s.mode !== 'local';
+  let statusText;
+  if (s.winner === 'D') {
+    statusText = 'Draw';
+  } else if (s.winner) {
+    statusText = s.winner === 'X'
+      ? (remote ? 'You win' : 'X wins')
+      : (remote
+          ? (s.mode === 'online' ? s.opponentName + ' wins' : 'Computer wins')
+          : 'O wins');
+  } else if (remote && s.turn === 'O') {
+    statusText = s.mode === 'online' ? s.opponentName + ' is playing…' : 'Computer is thinking…';
+  } else {
+    statusText = (remote ? 'Your turn' : s.turn + '’s turn')
+      + (s.active === null ? ' — play anywhere' : ' — highlighted board');
+  }
+
+  document.getElementById('status-dot').style.background = turnColor;
+  document.getElementById('status-text').textContent = statusText;
+  document.getElementById('mode-label').textContent =
+    s.mode === 'local' ? 'Pass & Play'
+    : s.mode === 'online' ? 'Room ' + s.roomCode
+    : 'Single player';
+
+  // Player chips
+  const xOn = !s.winner && s.turn === 'X';
+  const oOn = !s.winner && s.turn === 'O';
+  const chipRing = '0 0 0 1px rgba(255,255,255,0.09)';
+  const xChip = document.getElementById('x-chip');
+  const oChip = document.getElementById('o-chip');
+  xChip.style.background = xOn ? '#1C1C1E' : 'transparent';
+  xChip.style.boxShadow = xOn ? chipRing : 'none';
+  oChip.style.background = oOn ? '#1C1C1E' : 'transparent';
+  oChip.style.boxShadow = oOn ? chipRing : 'none';
+  document.getElementById('x-label').textContent = s.mode === 'local' ? 'Player 1' : 'You';
+  document.getElementById('o-label').textContent =
+    s.mode === 'local' ? 'Player 2'
+    : s.mode === 'online' ? s.opponentName
+    : 'Computer';
+
+  renderBoards();
+}
+
+function renderBoards() {
+  const s = state;
+  const X = X_COLOR;
+  const O = O_COLOR;
+  const container = document.getElementById('boards-container');
+
+  for (let b = 0; b < 9; b++) {
+    const bw = s.winners[b];
+    const playable = !s.winner && !bw && (s.active === null || s.active === b);
+    const boardEl = container.children[b];
+
+    boardEl.style.opacity = (bw || playable) ? '1' : '0.42';
+    boardEl.style.boxShadow = playable
+      ? '0 0 0 2px ' + (s.turn === 'X' ? 'rgba(10,132,255,0.55)' : 'rgba(255,69,58,0.55)')
+      : '0 0 0 1px rgba(255,255,255,0.05)';
+
+    // Win overlay
+    const overlay = boardEl.querySelector('.board-overlay');
+    overlay.style.opacity = bw ? '1' : '0';
+    overlay.style.color = bw === 'X' ? X : bw === 'O' ? O : '#48484A';
+    overlay.textContent = bw === 'X' ? '✕' : bw === 'O' ? '○' : bw === 'D' ? '–' : '';
+
+    // Cells
+    const cellEls = boardEl.querySelectorAll('.game-cell');
+    for (let c = 0; c < 9; c++) {
+      const i = b * 9 + c;
+      const mark = s.cells[i];
+      const cellEl = cellEls[c];
+
+      cellEl.style.background = mark === 'X' ? TINT_X
+        : mark === 'O' ? TINT_O
+        : playable ? '#2C2C2E'
+        : '#242426';
+      cellEl.style.color = mark === 'X' ? X : O;
+      cellEl.style.boxShadow = s.last === i
+        ? 'inset 0 0 0 2px ' + (mark === 'X' ? X : O)
+        : 'none';
+      cellEl.textContent = mark === 'X' ? '✕' : mark === 'O' ? '○' : '';
+    }
+  }
+}
+
+// ── DOM setup ────────────────────────────────────────────────────────────────
+
+function buildBoards() {
+  const container = document.getElementById('boards-container');
+  container.innerHTML = '';
+  for (let b = 0; b < 9; b++) {
+    const board = document.createElement('div');
+    board.className = 'mini-board';
+
+    const grid = document.createElement('div');
+    grid.className = 'cell-grid';
+
+    for (let c = 0; c < 9; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'game-cell';
+      cell.dataset.board = b;
+      cell.dataset.cell = c;
+      grid.appendChild(cell);
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'board-overlay';
+
+    board.appendChild(grid);
+    board.appendChild(overlay);
+    container.appendChild(board);
+  }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
-    new UltimateTicTacToe();
-});
+  buildBoards();
 
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {
-        });
-    });
-}
+  // Home
+  document.getElementById('btn-local').addEventListener('click', () => startGame('local'));
+  document.getElementById('btn-cpu').addEventListener('click', () => startGame('cpu'));
+  document.getElementById('btn-online').addEventListener('click', goLobby);
+
+  // Lobby
+  document.getElementById('back-lobby').addEventListener('click', goHome);
+  document.getElementById('copy-btn').addEventListener('click', copyRoomCode);
+  document.getElementById('open-room-btn').addEventListener('click', () => {
+    waitForOpponent('Waiting for opponent…', 'Ari');
+  });
+  document.getElementById('join-input').addEventListener('input', e => {
+    state.joinCode = e.target.value.toUpperCase();
+    renderLobby();
+  });
+  document.getElementById('join-btn').addEventListener('click', () => {
+    const code = state.joinCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (code.length < 5) return;
+    const pretty = code.slice(0, 3) + '-' + code.slice(3, 6);
+    state.roomCode = pretty;
+    waitForOpponent('Connecting to ' + pretty + '…', 'Jamie');
+  });
+
+  // Waiting
+  document.getElementById('cancel-wait').addEventListener('click', goHome);
+
+  // Game
+  document.getElementById('back-game').addEventListener('click', goHome);
+  document.getElementById('undo-btn').addEventListener('click', undoMove);
+  document.getElementById('new-game-btn').addEventListener('click', resetGame);
+
+  // Board cell clicks (event delegation)
+  document.getElementById('boards-container').addEventListener('click', e => {
+    const cellEl = e.target.closest('.game-cell');
+    if (!cellEl) return;
+    const b = parseInt(cellEl.dataset.board);
+    const c = parseInt(cellEl.dataset.cell);
+    play(b, c, false);
+  });
+
+  render();
+});

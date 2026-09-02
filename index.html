@@ -1,66 +1,144 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate Tic-Tac-Toe - Professional Competition Game</title>
-    <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ultimate Tic Tac Toe</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="game-container">
-        <header class="game-header">
-            <h1 class="game-title">
-                <i class="fas fa-trophy"></i>
-                Ultimate Tic-Tac-Toe
-            </h1>
-            <div class="game-info">
-                <div class="player-indicator">
-                    <span class="current-player">Player X's Turn</span>
-                    <div class="player-symbol" id="currentPlayerSymbol">X</div>
-                </div>
-                <button class="reset-btn" id="resetGame">
-                    <i class="fas fa-redo"></i>
-                    New Game
-                </button>
-            </div>
-        </header>
 
-        <main class="game-main">
-            <div class="game-status" id="gameStatus">
-                <p class="status-text">Choose any board to start the game</p>
-            </div>
-
-            <div class="ultimate-board" id="ultimateBoard">
-            </div>
-
-            <div class="game-instructions">
-                <h3>How to Play:</h3>
-                <ul>
-                    <li>Win small boards by getting 3 in a row</li>
-                    <li>Your move determines which board your opponent plays on next</li>
-                    <li>If sent to a completed board, you can choose any available board</li>
-                    <li>Win the game by getting 3 small boards in a row!</li>
-                </ul>
-            </div>
-        </main>
-
-        <div class="game-overlay" id="gameOverlay">
-            <div class="overlay-content">
-                <div class="winner-announcement">
-                    <i class="fas fa-crown"></i>
-                    <h2 id="winnerText">Player X Wins!</h2>
-                    <p id="winnerSubtext">Congratulations on your victory!</p>
-                    <button class="play-again-btn" id="playAgain">
-                        <i class="fas fa-play"></i>
-                        Play Again
-                    </button>
-                </div>
-            </div>
+  <!-- HOME -->
+  <div id="screen-home" class="screen active">
+    <div class="center-col">
+      <div class="home-hero">
+        <div class="logo-grid">
+          <div style="background:#0A84FF"></div>
+          <div style="background:#2C2C2E"></div>
+          <div style="background:#FF453A"></div>
+          <div style="background:#2C2C2E"></div>
+          <div style="background:#0A84FF"></div>
+          <div style="background:#2C2C2E"></div>
+          <div style="background:#FF453A"></div>
+          <div style="background:#2C2C2E"></div>
+          <div style="background:#0A84FF"></div>
         </div>
-    </div>
+        <h1>Ultimate<br>Tic Tac Toe</h1>
+        <p>Nine boards inside one. Every move sends your opponent somewhere new.</p>
+      </div>
 
-    <script src="scripts.js"></script>
+      <div class="mode-list">
+        <div class="mode-card" id="btn-local">
+          <div class="mode-icon" style="background:rgba(10,132,255,0.16);color:#0A84FF">✕</div>
+          <div class="mode-info">
+            <div class="mode-title">Play Locally</div>
+            <div class="mode-sub">Pass one device back and forth</div>
+          </div>
+          <div class="mode-chevron">›</div>
+        </div>
+
+        <div class="mode-card" id="btn-cpu">
+          <div class="mode-icon" style="background:rgba(255,159,10,0.16);color:#FF9F0A">◐</div>
+          <div class="mode-info">
+            <div class="mode-title">Play the Computer</div>
+            <div class="mode-sub">A tactical opponent, instantly</div>
+          </div>
+          <div class="mode-chevron">›</div>
+        </div>
+
+        <div class="mode-card" id="btn-online">
+          <div class="mode-icon" style="background:rgba(48,209,88,0.16);color:#30D158">◍</div>
+          <div class="mode-info">
+            <div class="mode-title">Play Online</div>
+            <div class="mode-sub">Share a room code with a friend</div>
+          </div>
+          <div class="mode-chevron">›</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOBBY -->
+  <div id="screen-lobby" class="screen">
+    <div class="center-col" style="max-width:440px">
+      <button class="back-btn" id="back-lobby">‹ Menu</button>
+
+      <div class="lobby-header">
+        <h2>Play Online</h2>
+        <p>Send the code to a friend, or enter theirs.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Your room</div>
+        <div id="room-code-display" class="room-code"></div>
+        <div class="card-actions">
+          <button class="btn-secondary" id="copy-btn">Copy Code</button>
+          <button class="btn-primary" id="open-room-btn">Open Room</button>
+        </div>
+      </div>
+
+      <div class="divider">or</div>
+
+      <div class="join-row">
+        <input id="join-input" class="join-input" placeholder="Enter code" maxlength="7" autocomplete="off" spellcheck="false">
+        <button class="btn-join" id="join-btn">Join</button>
+      </div>
+
+      <p class="lobby-note">Matchmaking is simulated in this prototype — a live opponent needs a server behind it.</p>
+    </div>
+  </div>
+
+  <!-- WAITING -->
+  <div id="screen-waiting" class="screen">
+    <div class="center-col waiting-content">
+      <div class="pulse-dots">
+        <div class="dot" style="animation-delay:0s"></div>
+        <div class="dot" style="animation-delay:0.18s"></div>
+        <div class="dot" style="animation-delay:0.36s"></div>
+      </div>
+      <div class="waiting-text">
+        <div id="wait-title" class="wait-title">Waiting for opponent…</div>
+        <div id="wait-room" class="wait-room"></div>
+      </div>
+      <button class="btn-cancel" id="cancel-wait">Cancel</button>
+    </div>
+  </div>
+
+  <!-- GAME -->
+  <div id="screen-game" class="screen">
+    <div class="center-col game-col">
+      <div class="game-topbar">
+        <button class="back-btn" id="back-game">‹ Menu</button>
+        <div class="status-pill">
+          <div id="status-dot" class="status-dot"></div>
+          <div id="status-text" class="status-pill-text"></div>
+        </div>
+        <div id="mode-label" class="mode-label"></div>
+      </div>
+
+      <div id="boards-container" class="boards-grid"></div>
+
+      <div class="player-chips">
+        <div id="x-chip" class="player-chip">
+          <div class="chip-mark" style="color:#0A84FF">✕</div>
+          <div id="x-label" class="chip-label">You</div>
+        </div>
+        <div class="chip-vs">vs</div>
+        <div id="o-chip" class="player-chip">
+          <div class="chip-mark" style="color:#FF453A">○</div>
+          <div id="o-label" class="chip-label">Computer</div>
+        </div>
+      </div>
+
+      <div class="game-actions">
+        <button class="btn-undo" id="undo-btn">Undo</button>
+        <button class="btn-new-game" id="new-game-btn">New Game</button>
+      </div>
+
+      <p class="game-hint">Your move decides which board your opponent plays in next. Win three small boards in a row to take the game.</p>
+    </div>
+  </div>
+
+  <script src="scripts.js"></script>
 </body>
 </html>
