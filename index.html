@@ -8,6 +8,33 @@
 </head>
 <body>
 
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-logo" id="btn-logo">
+      <div class="logo-grid-sm">
+        <div style="background:#0A84FF"></div><div style="background:#2C2C2E"></div><div style="background:#FF453A"></div>
+        <div style="background:#2C2C2E"></div><div style="background:#0A84FF"></div><div style="background:#2C2C2E"></div>
+        <div style="background:#FF453A"></div><div style="background:#2C2C2E"></div><div style="background:#0A84FF"></div>
+      </div>
+      <div class="topbar-title">Ultimate</div>
+    </div>
+    <div class="topbar-account">
+      <div id="signed-out-actions" class="signed-out-actions">
+        <button class="btn-text" id="btn-signin">Sign In</button>
+        <button class="btn-pill-primary" id="btn-signup">Create Account</button>
+      </div>
+      <div id="signed-in-actions" class="signed-in-actions hidden">
+        <div class="rating-chip"><span class="dot-online"></span><span id="rating-label"></span></div>
+        <div class="account-chip" id="btn-account">
+          <div class="avatar" id="account-avatar"></div>
+          <div class="account-chip-name" id="account-name"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-body">
+
   <!-- HOME -->
   <div id="screen-home" class="screen active">
     <div class="center-col">
@@ -24,7 +51,7 @@
           <div style="background:#0A84FF"></div>
         </div>
         <h1>Ultimate<br>Tic Tac Toe</h1>
-        <p>Nine boards inside one. Every move sends your opponent somewhere new.</p>
+        <p>Nine boards inside one. Every move sends your opponent somewhere new — and the clock never stops.</p>
       </div>
 
       <div class="mode-list">
@@ -32,7 +59,7 @@
           <div class="mode-icon" style="background:rgba(10,132,255,0.16);color:#0A84FF">✕</div>
           <div class="mode-info">
             <div class="mode-title">Play Locally</div>
-            <div class="mode-sub">Pass one device back and forth</div>
+            <div class="mode-sub">Pass one device, two clocks</div>
           </div>
           <div class="mode-chevron">›</div>
         </div>
@@ -41,7 +68,7 @@
           <div class="mode-icon" style="background:rgba(255,159,10,0.16);color:#FF9F0A">◐</div>
           <div class="mode-info">
             <div class="mode-title">Play the Computer</div>
-            <div class="mode-sub">A tactical opponent, instantly</div>
+            <div class="mode-sub">Pick a strength and a time control</div>
           </div>
           <div class="mode-chevron">›</div>
         </div>
@@ -50,7 +77,7 @@
           <div class="mode-icon" style="background:rgba(48,209,88,0.16);color:#30D158">◍</div>
           <div class="mode-info">
             <div class="mode-title">Play Online</div>
-            <div class="mode-sub">Share a room code with a friend</div>
+            <div class="mode-sub">Custom room, share a code</div>
           </div>
           <div class="mode-chevron">›</div>
         </div>
@@ -58,18 +85,88 @@
     </div>
   </div>
 
+  <!-- SETUP -->
+  <div id="screen-setup" class="screen">
+    <div class="center-col" style="max-width:520px">
+      <button class="back-btn" id="back-setup">‹ Menu</button>
+
+      <div class="lobby-header">
+        <h2 id="setup-title"></h2>
+        <p id="setup-subtitle"></p>
+      </div>
+
+      <div class="card setup-card">
+        <div class="card-label">Time control</div>
+        <div id="preset-grid" class="preset-grid"></div>
+
+        <div class="setup-divider"></div>
+
+        <div class="setup-row">
+          <div class="setup-row-info">
+            <div class="setup-row-title">Move limit</div>
+            <div class="setup-row-detail">Run out and you forfeit the turn</div>
+          </div>
+          <div id="move-seg" class="segmented"></div>
+        </div>
+
+        <div class="setup-row">
+          <div class="setup-row-info">
+            <div class="setup-row-title">Total per player</div>
+            <div class="setup-row-detail">Bank runs out and you lose the game</div>
+          </div>
+          <div id="bank-seg" class="segmented"></div>
+        </div>
+
+        <div id="level-row" class="setup-row hidden">
+          <div class="setup-row-info">
+            <div class="setup-row-title">Strength</div>
+            <div class="setup-row-detail">How sharply the computer plays</div>
+          </div>
+          <div id="level-seg" class="segmented"></div>
+        </div>
+
+        <div id="side-row" class="setup-row hidden">
+          <div class="setup-row-info">
+            <div class="setup-row-title">You play</div>
+            <div class="setup-row-detail">X always moves first</div>
+          </div>
+          <div id="side-seg" class="segmented"></div>
+        </div>
+
+        <div class="setup-row">
+          <div class="setup-row-info">
+            <div class="setup-row-title">Theme</div>
+            <div class="setup-row-detail">Board and background colour</div>
+          </div>
+          <div id="theme-swatches" class="swatch-row"></div>
+        </div>
+
+        <div class="setup-row">
+          <div class="setup-row-info">
+            <div class="setup-row-title">Board hints</div>
+            <div class="setup-row-detail">Highlight where you must play</div>
+          </div>
+          <div id="hints-toggle" class="toggle">
+            <div class="toggle-knob"></div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-confirm" id="confirm-setup"></button>
+    </div>
+  </div>
+
   <!-- LOBBY -->
   <div id="screen-lobby" class="screen">
     <div class="center-col" style="max-width:440px">
-      <button class="back-btn" id="back-lobby">‹ Menu</button>
+      <button class="back-btn" id="back-lobby">‹ Settings</button>
 
       <div class="lobby-header">
-        <h2>Play Online</h2>
-        <p>Send the code to a friend, or enter theirs.</p>
+        <h2>Your Room</h2>
+        <p id="lobby-summary"></p>
       </div>
 
       <div class="card">
-        <div class="card-label">Your room</div>
         <div id="room-code-display" class="room-code"></div>
         <div class="card-actions">
           <button class="btn-secondary" id="copy-btn">Copy Code</button>
@@ -83,8 +180,6 @@
         <input id="join-input" class="join-input" placeholder="Enter code" maxlength="7" autocomplete="off" spellcheck="false">
         <button class="btn-join" id="join-btn">Join</button>
       </div>
-
-      <p class="lobby-note">Open a room and share the code, or enter a friend's code to connect.</p>
     </div>
   </div>
 
@@ -107,29 +202,47 @@
   <!-- GAME -->
   <div id="screen-game" class="screen">
     <div class="game-col">
-      <div class="game-topbar">
-        <button class="back-btn" id="back-game">‹ Menu</button>
-        <div class="status-pill">
-          <div id="status-dot" class="status-dot"></div>
-          <div id="status-text" class="status-pill-text"></div>
-          <div id="turn-timer" class="turn-timer"></div>
-        </div>
-        <div id="mode-label" class="mode-label"></div>
-      </div>
-
       <div class="game-layout">
         <div class="game-main">
+          <div id="result-banner" class="result-banner"></div>
           <div id="boards-container" class="boards-grid"></div>
+          <p class="game-hint">Your move decides which board your opponent plays in next. Win three small boards in a row to take the game.</p>
+        </div>
 
-          <div class="player-chips">
-            <div id="x-chip" class="player-chip">
-              <div class="chip-mark" style="color:#0A84FF">✕</div>
-              <div id="x-label" class="chip-label">You</div>
+        <div class="game-side">
+          <div class="clock-panel" id="panel-top">
+            <div class="clock-row">
+              <div class="clock-who">
+                <div class="clock-mark" id="top-mark"></div>
+                <div class="clock-who-text">
+                  <div class="clock-label" id="top-label"></div>
+                  <div class="clock-sub" id="top-sub"></div>
+                </div>
+              </div>
+              <div class="clock-time" id="top-clock"></div>
             </div>
-            <div class="chip-vs">vs</div>
-            <div id="o-chip" class="player-chip">
-              <div class="chip-mark" style="color:#FF453A">○</div>
-              <div id="o-label" class="chip-label">Computer</div>
+            <div class="move-bar-row">
+              <div class="move-bar-track"><div class="move-bar-fill" id="top-bar"></div></div>
+              <div class="move-bar-label" id="top-move-label"></div>
+            </div>
+          </div>
+
+          <div class="side-tabs">
+            <button class="side-tab active" id="tab-chat" data-tab="chat" type="button">Chat</button>
+            <button class="side-tab" id="tab-log" data-tab="log" type="button">Game Log</button>
+            <button class="menu-btn" id="menu-btn" type="button">⋯</button>
+          </div>
+
+          <div id="menu-panel" class="menu-panel hidden">
+            <div class="menu-grid">
+              <button class="menu-item" id="menu-pause"></button>
+              <button class="menu-item" id="menu-undo">Undo</button>
+              <button class="menu-item" id="menu-rematch">Rematch</button>
+              <button class="menu-item menu-item-danger" id="menu-leave">Leave</button>
+            </div>
+            <div class="menu-theme-row">
+              <div class="card-label">Theme</div>
+              <div id="menu-theme-swatches" class="swatch-row"></div>
             </div>
           </div>
 
@@ -141,31 +254,73 @@
             </div>
           </div>
 
-          <div class="game-actions">
-            <button class="btn-undo" id="undo-btn">Undo</button>
-            <button class="btn-rematch" id="rematch-btn">Rematch</button>
-            <button class="btn-new-game" id="new-game-btn">New Game</button>
-          </div>
-
-          <p class="game-hint">Your move decides which board your opponent plays in next. Win three small boards in a row to take the game.</p>
-        </div>
-
-        <div class="game-side">
-          <div class="side-tabs">
-            <button class="side-tab active" id="tab-log" data-tab="log" type="button">Match Log</button>
-            <button class="side-tab" id="tab-chat" data-tab="chat" type="button">Chat</button>
-          </div>
-          <div id="panel-log" class="side-panel active">
-            <div id="log-list" class="log-list"></div>
-          </div>
-          <div id="panel-chat" class="side-panel">
+          <div id="panel-chat" class="side-panel active">
             <div id="chat-list" class="chat-list"></div>
             <form id="chat-form" class="chat-form">
               <input id="chat-input" class="chat-input" placeholder="Message…" maxlength="300" autocomplete="off" spellcheck="false">
-              <button type="submit" class="btn-chat-send">Send</button>
+              <button type="submit" class="btn-chat-send">↑</button>
             </form>
           </div>
+          <div id="panel-log" class="side-panel">
+            <div id="log-list" class="log-list"></div>
+            <div class="log-footer" id="log-footer"></div>
+          </div>
+
+          <div class="clock-panel" id="panel-bottom">
+            <div class="move-bar-row">
+              <div class="move-bar-track"><div class="move-bar-fill" id="bottom-bar"></div></div>
+              <div class="move-bar-label" id="bottom-move-label"></div>
+            </div>
+            <div class="clock-row">
+              <div class="clock-who">
+                <div class="clock-mark" id="bottom-mark"></div>
+                <div class="clock-who-text">
+                  <div class="clock-label" id="bottom-label"></div>
+                  <div class="clock-sub" id="bottom-sub"></div>
+                </div>
+              </div>
+              <div class="clock-time" id="bottom-clock"></div>
+            </div>
+          </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /app-body -->
+
+  <!-- ACCOUNT MODAL -->
+  <div id="account-modal" class="modal-overlay hidden">
+    <div class="modal-card" id="account-modal-card">
+      <div class="modal-header">
+        <div class="modal-title" id="account-modal-title"></div>
+        <div class="modal-subtitle" id="account-modal-subtitle"></div>
+      </div>
+
+      <div id="account-auth-form" class="account-auth-form">
+        <input id="name-input" class="modal-input" placeholder="Display name" autocomplete="name">
+        <input id="email-input" class="modal-input" placeholder="Email" autocomplete="email">
+        <input id="password-input" class="modal-input" type="password" placeholder="Password" autocomplete="current-password">
+        <div id="auth-error" class="auth-error hidden"></div>
+        <button class="btn-confirm" id="auth-submit"></button>
+        <button class="btn-secondary-block" id="auth-switch"></button>
+        <button class="btn-secondary-block" id="btn-guest">Continue as Guest</button>
+      </div>
+
+      <div id="account-profile" class="account-profile hidden">
+        <div class="profile-card">
+          <div class="avatar avatar-lg" id="profile-avatar"></div>
+          <div class="profile-info">
+            <div class="profile-name" id="profile-name"></div>
+            <div class="profile-meta" id="profile-meta"></div>
+          </div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-tile"><div class="stat-value" id="stat-wins"></div><div class="stat-label">Wins</div></div>
+          <div class="stat-tile"><div class="stat-value" id="stat-losses"></div><div class="stat-label">Losses</div></div>
+          <div class="stat-tile"><div class="stat-value" id="stat-rating"></div><div class="stat-label">Rating</div></div>
+        </div>
+        <button class="btn-secondary-block btn-danger-text" id="btn-signout">Sign Out</button>
       </div>
     </div>
   </div>

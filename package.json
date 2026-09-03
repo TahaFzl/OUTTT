@@ -4,12 +4,15 @@
     "description": "Professional Ultimate Tic-Tac-Toe with multiplayer support",
     "main": "server.js",
     "scripts": {
-      "start": "node server.js",
-      "dev": "node server.js"
+      "start": "node --no-warnings server.js",
+      "dev": "node --no-warnings server.js"
     },
     "keywords": ["game", "tic-tac-toe", "multiplayer", "websocket"],
     "author": "",
     "license": "ISC",
+    "engines": {
+      "node": ">=22.5.0"
+    },
     "dependencies": {
       "express": "^5.1.0",
       "ws": "^8.18.3"
