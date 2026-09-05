@@ -87,12 +87,13 @@ button { font-family: inherit; }
   letter-spacing: -0.015em;
 }
 
-.topbar-account { display: flex; align-items: center; gap: 10px; }
+.topbar-account { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
 .signed-out-actions, .signed-in-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .btn-text {
@@ -105,6 +106,8 @@ button { font-family: inherit; }
   color: var(--text2);
   cursor: pointer;
   transition: color 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .btn-text:hover { color: var(--text); }
 
@@ -118,8 +121,12 @@ button { font-family: inherit; }
   font-weight: 590;
   cursor: pointer;
   transition: background 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .btn-pill-primary:hover { background: #3A9BFF; }
+
+.label-short { display: none; }
 
 .rating-chip {
   display: flex;
@@ -131,9 +138,11 @@ button { font-family: inherit; }
   box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
   font-size: 13px;
   color: var(--text2);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.dot-online { width: 6px; height: 6px; border-radius: 50%; background: #30D158; }
+.dot-online { width: 6px; height: 6px; border-radius: 50%; background: #30D158; flex-shrink: 0; }
 
 .account-chip {
   display: flex;
@@ -145,6 +154,8 @@ button { font-family: inherit; }
   cursor: pointer;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
   transition: background 0.2s;
+  min-width: 0;
+  flex-shrink: 1;
 }
 .account-chip:hover { background: #232325; }
 
@@ -162,7 +173,23 @@ button { font-family: inherit; }
 }
 .avatar-lg { width: 44px; height: 44px; font-size: 17px; }
 
-.account-chip-name { font-size: 14px; font-weight: 500; letter-spacing: -0.01em; }
+.account-chip-name {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 30vw;
+}
+
+@media (max-width: 400px) {
+  .label-full { display: none; }
+  .label-short { display: inline; }
+  #btn-signin { display: none; }
+  .rating-chip { display: none; }
+  .account-chip-name { max-width: 22vw; }
+}
 
 .app-body {
   flex: 1;
@@ -609,7 +636,9 @@ button { font-family: inherit; }
   font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.02em;
+  text-align: center;
 }
+.wait-title .nowrap { white-space: nowrap; }
 
 .btn-cancel {
   padding: 11px 22px;
@@ -643,6 +672,7 @@ button { font-family: inherit; }
   justify-content: center;
   gap: 22px;
   width: 100%;
+  transform-origin: center center;
 }
 
 .online-overlay {
@@ -1179,6 +1209,9 @@ button { font-family: inherit; }
 .modal-title { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
 .modal-subtitle { font-size: 14px; line-height: 1.45; color: var(--text2); }
 
+#notice-modal { z-index: 60; }
+.notice-card { max-width: 340px; }
+
 .account-auth-form { display: flex; flex-direction: column; gap: 10px; }
 
 .modal-input {
@@ -1284,6 +1317,13 @@ button { font-family: inherit; }
 @media (max-width: 860px) {
   .game-layout { flex-direction: column; align-items: center; }
   .game-side { flex: 0 1 auto; min-height: 320px; max-height: none; height: 60vh; width: 100%; max-width: 480px; }
+  /* Stacked layout gives the side panel far less room than desktop's
+     tall column, and the two clock panels were eating most of it —
+     leaving the chat/log list a sliver. Trim their padding here so the
+     actual message/log list gets real space to breathe. */
+  .clock-panel { padding: 8px 10px; gap: 5px; }
+  .clock-row { padding: 7px 10px; }
+  .move-bar-row { gap: 6px; }
 }
 
 @media (max-width: 520px) {
@@ -1299,4 +1339,10 @@ button { font-family: inherit; }
   .rematch-request { flex-direction: column; align-items: stretch; text-align: center; }
   .game-side { height: 56vh; }
   .clock-time { font-size: 18px; }
+
+  /* A label plus a 4-5 option segmented control never both fit on one row
+     at phone widths — stack them instead of letting the control overflow. */
+  .setup-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .segmented { width: 100%; }
+  .segmented-opt { flex: 1; padding: 7px 4px; font-size: 12px; text-align: center; }
 }

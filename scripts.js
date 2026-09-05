@@ -380,7 +380,7 @@ function connectSocket(onOpen) {
     clearInterval(pingInterval);
     pingInterval = null;
     if (state.mode === 'online' && (state.screen === 'game' || state.screen === 'waiting' || state.screen === 'lobby') && !state.winner) {
-      alert('Connection to the server was lost.');
+      showNotice('Connection to the server was lost.');
       goHome();
     }
   };
@@ -456,7 +456,7 @@ function handleServerMessage(msg) {
       break;
     case 'forfeit':
       applyServerGameState(msg.gameState);
-      appendLog(displayName(msg.side) + '’s move time expired — turn forfeited.', true, pushSnapshot());
+      appendLog(possessiveName(msg.side) + ' move time expired — turn forfeited.', true, pushSnapshot());
       render();
       break;
     case 'gameOver':
@@ -465,7 +465,7 @@ function handleServerMessage(msg) {
       appendLog(
         msg.winner === 'tie'
           ? 'Game tied!'
-          : (displayName(msg.winner) + (msg.winReason === 'flag' ? ' wins on time!' : ' wins the game!')),
+          : (displayName(msg.winner) + ' ' + winVerb(msg.winner) + (msg.winReason === 'flag' ? ' on time!' : ' the game!')),
         true,
         pushSnapshot()
       );
@@ -493,7 +493,7 @@ function handleServerMessage(msg) {
       render();
       break;
     case 'playerDisconnected':
-      alert(msg.message || 'Your opponent has disconnected.');
+      showNotice(msg.message || 'Your opponent has disconnected.');
       goHome();
       break;
     case 'error':
@@ -502,7 +502,7 @@ function handleServerMessage(msg) {
         // a fresh code and retry rather than surfacing this to the user.
         enterRoom();
       } else {
-        alert(msg.message || 'Something went wrong.');
+        showNotice(msg.message || 'Something went wrong.');
         closeSocket();
         state.onlinePhase = null;
         state.screen = 'setup';
@@ -518,7 +518,7 @@ function handleServerMessage(msg) {
           }
         }, 400);
       } else {
-        alert(msg.message || 'That room was not found.');
+        showNotice(msg.message || 'That room was not found.');
         closeSocket();
         state.onlinePhase = null;
         state.screen = 'setup';
@@ -530,12 +530,27 @@ function handleServerMessage(msg) {
 
 // ── Match log / chat ────────────────────────────────────────────────────────
 
+// Labels yourself as "You" regardless of whether you're signed in — the
+// "Guest" fallback from myDisplayName() is only what your opponent sees you
+// as, not what the UI should call you to your own face.
 function displayName(symbol) {
   const s = state;
   if (s.mode === 'local') return symbol === 'X' ? 'Player 1' : 'Player 2';
-  if (s.mode === 'cpu') return symbol === bottomSide() ? myDisplayName() : 'Computer';
-  if (s.mode === 'online') return symbol === s.mySymbol ? myDisplayName() : s.opponentName;
+  if (s.mode === 'cpu') return symbol === bottomSide() ? 'You' : 'Computer';
+  if (s.mode === 'online') return symbol === s.mySymbol ? 'You' : s.opponentName;
   return symbol;
+}
+
+// "You win" vs "Guest wins" — displayName() can return either a name or the
+// second-person "You", so the verb has to agree with whichever it picked.
+function winVerb(symbol) {
+  return displayName(symbol) === 'You' ? 'win' : 'wins';
+}
+
+// "Your move" vs "Guest's move" — same agreement problem for possessives.
+function possessiveName(symbol) {
+  const name = displayName(symbol);
+  return name === 'You' ? 'Your' : name + '’s';
 }
 
 function appendLog(text, highlight, moveIndex) {
@@ -577,7 +592,7 @@ function logMoveOutcome(symbol, boardIndex, cellIndex, prevWinners, prevWinner) 
     appendLog('Board ' + (boardIndex + 1) + (bw === 'D' ? ' tied.' : ' won by ' + displayName(bw) + '.'), true);
   }
   if (state.winner && state.winner !== prevWinner) {
-    appendLog(state.winner === 'D' ? 'Game tied!' : (displayName(state.winner) + ' wins the game!'), true);
+    appendLog(state.winner === 'D' ? 'Game tied!' : (displayName(state.winner) + ' ' + winVerb(state.winner) + ' the game!'), true);
   }
 }
 
@@ -701,7 +716,7 @@ function forfeitTurnLocal() {
   state.turn = side === 'X' ? 'O' : 'X';
   state.active = null;
   state.moveLeft = state.move;
-  appendLog(displayName(side) + '’s move time expired — turn forfeited, opponent plays anywhere.', true, pushSnapshot());
+  appendLog(possessiveName(side) + ' move time expired — turn forfeited, opponent plays anywhere.', true, pushSnapshot());
   render();
   scheduleAiIfNeeded();
 }
@@ -710,7 +725,7 @@ function flagFallLocal(side) {
   state.winner = side === 'X' ? 'O' : 'X';
   state.winReason = 'flag';
   stopClock();
-  appendLog(displayName(side) + ' ran out of time — ' + displayName(state.winner) + ' wins!', true, pushSnapshot());
+  appendLog(displayName(side) + ' ran out of time — ' + displayName(state.winner) + ' ' + winVerb(state.winner) + '!', true, pushSnapshot());
   render();
 }
 
@@ -1192,7 +1207,13 @@ function fitToViewport(container, content) {
   content.style.marginTop = '';
   content.style.marginBottom = '';
 
-  const availableH = container.clientHeight;
+  // The container centers `content` via flexbox within its content box (padding
+  // excluded), not its full clientHeight — using clientHeight directly here
+  // under-corrects whenever top/bottom padding differ (as .screen's does),
+  // leaving the scaled content off-center enough to clip a few px off one edge.
+  const cs = getComputedStyle(container);
+  const vPadding = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const availableH = container.clientHeight - vPadding;
   const naturalH = content.offsetHeight;
   // Below this, treat the measurement as bogus (e.g. a hidden/backgrounded
   // tab reporting a momentary 0 height) rather than a genuinely tiny
@@ -1209,16 +1230,40 @@ function fitToViewport(container, content) {
 // The game screen sizes itself with CSS (the board/side panel calc() rules)
 // rather than this scale trick, so it's left alone here.
 function fitActiveScreen() {
-  if (state.screen === 'game') return;
   const screenEl = document.querySelector('.screen.active');
   if (!screenEl) return;
-  const content = screenEl.querySelector(':scope > .center-col');
+  // The game screen mostly sizes itself with CSS (the board/side-panel
+  // calc() rules), but that math assumes the desktop side-by-side layout —
+  // once the side panel stacks below the board on a narrow window, it
+  // badly overestimates the board's budget. This acts as a safety net,
+  // uniformly scaling the game layout down if it still overflows. (Measure
+  // .game-layout rather than .game-col — the latter has flex:1 and always
+  // just fills the screen, which would hide real overflow from the check.)
+  const content = screenEl.querySelector(':scope > .center-col') || screenEl.querySelector('.game-layout');
   fitToViewport(screenEl, content);
 }
 
 function fitAccountModal() {
   if (!state.accountOpen) return;
   fitToViewport(document.getElementById('account-modal'), document.getElementById('account-modal-card'));
+}
+
+// Themed stand-in for window.alert() — a native dialog would break out of
+// the app's dark UI entirely.
+function showNotice(message, title) {
+  document.getElementById('notice-title').textContent = title || 'Notice';
+  document.getElementById('notice-message').textContent = message;
+  document.getElementById('notice-modal').classList.remove('hidden');
+  fitNoticeModal();
+}
+
+function hideNotice() {
+  document.getElementById('notice-modal').classList.add('hidden');
+}
+
+function fitNoticeModal() {
+  if (document.getElementById('notice-modal').classList.contains('hidden')) return;
+  fitToViewport(document.getElementById('notice-modal'), document.querySelector('#notice-modal .notice-card'));
 }
 
 function renderSegmented(containerId, opts, value, onPick) {
@@ -1300,7 +1345,16 @@ function renderOnlineOverlay() {
     document.getElementById('overlay-copy-link').textContent =
       s.copiedLink === 'ok' ? 'Link Copied' : s.copiedLink === 'failed' ? "Couldn't copy" : 'Copy Link';
   } else {
-    document.getElementById('overlay-joining-text').textContent = s.waitTitle;
+    // Built with a nowrap span around the code, not a single textContent
+    // string — otherwise narrow screens can wrap mid-code ("59M-\n96C").
+    const textEl = document.getElementById('overlay-joining-text');
+    textEl.textContent = '';
+    textEl.appendChild(document.createTextNode('Connecting to '));
+    const codeSpan = document.createElement('span');
+    codeSpan.className = 'nowrap';
+    codeSpan.textContent = s.roomCode;
+    textEl.appendChild(codeSpan);
+    textEl.appendChild(document.createTextNode('…'));
   }
 }
 
@@ -1364,8 +1418,12 @@ function renderSideTabs() {
 
   document.getElementById('tab-chat').classList.toggle('active', s.sidePanelTab === 'chat');
   document.getElementById('tab-log').classList.toggle('active', s.sidePanelTab === 'log');
-  document.getElementById('panel-chat').classList.toggle('active', s.sidePanelTab === 'chat');
-  document.getElementById('panel-log').classList.toggle('active', s.sidePanelTab === 'log');
+  // The open menu and the active chat/log panel share the same tight
+  // vertical space — showing both at once just squeezes the panel to
+  // near-nothing instead of anything readable, so the menu takes over
+  // fully while it's open rather than splitting the room with it.
+  document.getElementById('panel-chat').classList.toggle('active', !s.menuOpen && s.sidePanelTab === 'chat');
+  document.getElementById('panel-log').classList.toggle('active', !s.menuOpen && s.sidePanelTab === 'log');
 
   document.getElementById('menu-panel').classList.toggle('hidden', !s.menuOpen);
   document.getElementById('menu-btn').classList.toggle('active', s.menuOpen);
@@ -1387,7 +1445,7 @@ function renderGame() {
   const bannerRematch = document.getElementById('result-rematch-btn');
   if (s.winner) {
     banner.classList.add('active');
-    bannerText.textContent = s.winner === 'D' ? 'Draw' : (displayName(s.winner) + (s.winReason === 'flag' ? ' wins on time' : ' wins'));
+    bannerText.textContent = s.winner === 'D' ? 'Draw' : (displayName(s.winner) + ' ' + winVerb(s.winner) + (s.winReason === 'flag' ? ' on time' : ''));
     bannerText.style.color = s.winner === 'D' ? 'var(--text2)' : (s.winner === 'X' ? X_COLOR : O_COLOR);
     bannerRematch.textContent = (s.mode === 'online' && s.rematchPending) ? 'Waiting…' : 'Rematch';
     bannerRematch.disabled = s.mode === 'online' && s.rematchPending;
@@ -1569,6 +1627,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderAccountModal();
   });
   document.getElementById('btn-guest').addEventListener('click', playAsGuest);
+  document.getElementById('notice-ok').addEventListener('click', hideNotice);
   document.getElementById('btn-signout').addEventListener('click', signOut);
   document.getElementById('user-search-input').addEventListener('input', e => {
     clearTimeout(searchDebounce);
@@ -1661,6 +1720,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resizeRAF = requestAnimationFrame(() => {
       fitActiveScreen();
       fitAccountModal();
+      fitNoticeModal();
     });
   });
 });

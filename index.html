@@ -22,7 +22,10 @@
     <div class="topbar-account">
       <div id="signed-out-actions" class="signed-out-actions">
         <button class="btn-text" id="btn-signin">Sign In</button>
-        <button class="btn-pill-primary" id="btn-signup">Create Account</button>
+        <button class="btn-pill-primary" id="btn-signup">
+          <span class="label-full">Create Account</span>
+          <span class="label-short">Sign Up</span>
+        </button>
       </div>
       <div id="signed-in-actions" class="signed-in-actions hidden">
         <div class="rating-chip"><span class="dot-online"></span><span id="rating-label"></span></div>
@@ -280,6 +283,17 @@
   </div>
 
   </div><!-- /app-body -->
+
+  <!-- NOTICE MODAL -->
+  <div id="notice-modal" class="modal-overlay hidden">
+    <div class="modal-card notice-card">
+      <div class="modal-header">
+        <div class="modal-title" id="notice-title">Notice</div>
+        <div class="modal-subtitle" id="notice-message"></div>
+      </div>
+      <button class="btn-confirm" id="notice-ok">OK</button>
+    </div>
+  </div>
 
   <!-- ACCOUNT MODAL -->
   <div id="account-modal" class="modal-overlay hidden">
