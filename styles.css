@@ -589,8 +589,6 @@ button { font-family: inherit; }
 
 /* ── WAITING ── */
 
-.waiting-content { gap: 22px; }
-
 @keyframes pulseDot {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .35; transform: scale(.82); }
@@ -606,22 +604,10 @@ button { font-family: inherit; }
   animation: pulseDot 1.3s ease-in-out infinite;
 }
 
-.waiting-text {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
 .wait-title {
   font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.02em;
-}
-
-.wait-room {
-  font-size: 15px;
-  color: var(--text2);
 }
 
 .btn-cancel {
@@ -650,11 +636,50 @@ button { font-family: inherit; }
 }
 
 .game-layout {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   gap: 22px;
   width: 100%;
+}
+
+.online-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 28px;
+}
+
+.online-overlay-card {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.overlay-block {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.setup-join-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
 }
 
 .game-main {

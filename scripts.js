@@ -127,6 +127,7 @@ const state = Object.assign({
   copied: false,
   copiedLink: false,
   joinRetriesLeft: 0,
+  onlinePhase: null,
   waitTitle: 'Waiting for opponent…',
   opponentName: 'Opponent',
   opponentRating: null,
@@ -423,6 +424,7 @@ function handleServerMessage(msg) {
       state.sidePanelTab = 'chat';
       state.snapshots = [];
       state.viewIndex = null;
+      state.onlinePhase = null;
       applyServerGameState(msg.gameState);
       state.mySymbol = msg.playerSymbol;
       state.opponentName = (msg.opponent && msg.opponent.name) || 'Opponent';
@@ -495,28 +497,30 @@ function handleServerMessage(msg) {
       goHome();
       break;
     case 'error':
-      if (state.screen === 'lobby') {
+      if (state.onlinePhase === 'hosting') {
         // Our own room's code collided with an existing one — silently mint
         // a fresh code and retry rather than surfacing this to the user.
         enterRoom();
       } else {
         alert(msg.message || 'Something went wrong.');
         closeSocket();
+        state.onlinePhase = null;
         state.screen = 'setup';
         render();
       }
       break;
     case 'roomNotFound':
-      if (state.screen === 'waiting' && state.joinRetriesLeft > 0) {
+      if (state.onlinePhase === 'joining' && state.joinRetriesLeft > 0) {
         state.joinRetriesLeft -= 1;
         setTimeout(() => {
-          if (state.screen === 'waiting' && socket && socket.readyState === WebSocket.OPEN) {
+          if (state.onlinePhase === 'joining' && socket && socket.readyState === WebSocket.OPEN) {
             sendJoinRoomMessage();
           }
         }, 400);
       } else {
         alert(msg.message || 'That room was not found.');
         closeSocket();
+        state.onlinePhase = null;
         state.screen = 'setup';
         render();
       }
@@ -893,14 +897,17 @@ function confirmSetup() {
   }
 }
 
-// Creates and opens the room immediately — no separate "Open Room" click,
-// so the host lands straight on a live, shareable room (like a Meet link).
+// Creates and opens the room immediately, landing straight on the game
+// screen with a share overlay — like starting a Meet call rather than
+// configuring a call and only then joining it.
 function enterRoom(code) {
   state.mode = 'online';
-  state.screen = 'lobby';
+  state.screen = 'game';
+  state.onlinePhase = 'hosting';
   state.roomCode = code || makeCode();
   state.copied = false;
   state.copiedLink = false;
+  Object.assign(state, freshGame());
   render();
   const hostSide = state.side === 'random' ? (Math.random() < 0.5 ? 'X' : 'O') : state.side;
   connectSocket(() => {
@@ -951,8 +958,8 @@ async function copyText(text) {
 async function copyRoomLink() {
   const ok = await copyText(roomLink());
   state.copiedLink = ok ? 'ok' : 'failed';
-  renderLobby();
-  setTimeout(() => { state.copiedLink = false; renderLobby(); }, 1600);
+  renderOnlineOverlay();
+  setTimeout(() => { state.copiedLink = false; renderOnlineOverlay(); }, 1600);
 }
 
 function sendJoinRoomMessage() {
@@ -970,9 +977,11 @@ function joinRoomByCode(rawCode) {
   if (code.length < 5) return;
   const pretty = code.length === 6 ? code.slice(0, 3) + '-' + code.slice(3, 6) : code;
   state.mode = 'online';
+  state.screen = 'game';
+  state.onlinePhase = 'joining';
   state.roomCode = pretty;
   state.waitTitle = 'Connecting to ' + pretty + '…';
-  state.screen = 'waiting';
+  Object.assign(state, freshGame());
   // A friend's joinRoom can reach the server before the host's own createRoom
   // does, especially over a real (non-local) connection — retry briefly on a
   // false "not found" instead of failing outright.
@@ -1074,7 +1083,7 @@ function goHome() {
   Object.assign(state, {
     screen: 'home', roomCode: makeCode(), joinCode: '', copied: false, mySymbol: 'X',
     chat: [], log: [], rematchPending: false, rematchIncoming: false, sidePanelTab: 'chat',
-    unreadChat: 0, menuOpen: false, paused: false
+    unreadChat: 0, menuOpen: false, paused: false, onlinePhase: null
   });
   updateChatBadge();
   render();
@@ -1083,6 +1092,7 @@ function goHome() {
 function goBackToSetup() {
   stopClock();
   closeSocket();
+  state.onlinePhase = null;
   state.screen = 'setup';
   render();
 }
@@ -1090,8 +1100,8 @@ function goBackToSetup() {
 async function copyRoomCode() {
   const ok = await copyText(state.roomCode);
   state.copied = ok ? 'ok' : 'failed';
-  renderLobby();
-  setTimeout(() => { state.copied = false; renderLobby(); }, 1600);
+  renderOnlineOverlay();
+  setTimeout(() => { state.copied = false; renderOnlineOverlay(); }, 1600);
 }
 
 // ── Render: top bar / account modal ─────────────────────────────────────────
@@ -1165,8 +1175,6 @@ function render() {
   if (screenEl) screenEl.classList.add('active');
 
   if (state.screen === 'setup') renderSetup();
-  else if (state.screen === 'lobby') renderLobby();
-  else if (state.screen === 'waiting') renderWaiting();
   else if (state.screen === 'game') renderGame();
 }
 
@@ -1220,26 +1228,37 @@ function renderSetup() {
 
   document.getElementById('hints-toggle').classList.toggle('on', s.hints);
   document.getElementById('confirm-setup').textContent = s.mode === 'online' ? 'Create Room' : 'Start Match';
+
+  document.getElementById('setup-join-section').classList.toggle('hidden', s.mode !== 'online');
+  const joinInput = document.getElementById('setup-join-input');
+  if (joinInput.value !== s.joinCode) joinInput.value = s.joinCode;
 }
 
-function renderLobby() {
-  document.getElementById('room-code-display').textContent = state.roomCode;
-  document.getElementById('copy-btn').textContent =
-    state.copied === 'ok' ? 'Copied' : state.copied === 'failed' ? "Couldn't copy" : 'Copy Code';
-  document.getElementById('copy-link-btn').textContent =
-    state.copiedLink === 'ok' ? 'Link Copied' : state.copiedLink === 'failed' ? "Couldn't copy" : 'Copy Link';
+// The online connect flow (hosting a fresh room or joining one) happens as
+// an overlay directly on the game screen rather than a separate lobby/
+// waiting screen — the player is already "in the room" the whole time.
+function renderOnlineOverlay() {
+  const s = state;
+  const overlay = document.getElementById('online-overlay');
+  if (!s.onlinePhase) {
+    overlay.classList.add('hidden');
+    return;
+  }
+  overlay.classList.remove('hidden');
 
-  const joinInput = document.getElementById('join-input');
-  if (joinInput.value !== state.joinCode) joinInput.value = state.joinCode;
+  const hosting = s.onlinePhase === 'hosting';
+  document.getElementById('overlay-hosting').classList.toggle('hidden', !hosting);
+  document.getElementById('overlay-joining').classList.toggle('hidden', hosting);
 
-  const bankTxt = state.bank ? fmtClock(state.bank) + ' each' : 'No total bank';
-  const moveTxt = state.move ? state.move + 's per move' : 'No move limit';
-  document.getElementById('lobby-summary').textContent = bankTxt + ' · ' + moveTxt;
-}
-
-function renderWaiting() {
-  document.getElementById('wait-title').textContent = state.waitTitle;
-  document.getElementById('wait-room').textContent = 'Room ' + state.roomCode;
+  if (hosting) {
+    document.getElementById('overlay-room-code').textContent = s.roomCode;
+    document.getElementById('overlay-copy-code').textContent =
+      s.copied === 'ok' ? 'Copied' : s.copied === 'failed' ? "Couldn't copy" : 'Copy Code';
+    document.getElementById('overlay-copy-link').textContent =
+      s.copiedLink === 'ok' ? 'Link Copied' : s.copiedLink === 'failed' ? "Couldn't copy" : 'Copy Link';
+  } else {
+    document.getElementById('overlay-joining-text').textContent = s.waitTitle;
+  }
 }
 
 function subTextFor(side) {
@@ -1315,6 +1334,8 @@ function renderSideTabs() {
 
 function renderGame() {
   const s = state;
+
+  renderOnlineOverlay();
 
   // The result banner always reflects the real, live outcome — only the
   // board/clocks below it change while browsing an earlier move.
@@ -1521,19 +1542,18 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('back-setup').addEventListener('click', goHome);
   document.getElementById('confirm-setup').addEventListener('click', confirmSetup);
   document.getElementById('hints-toggle').addEventListener('click', () => { state.hints = !state.hints; renderSetup(); });
-
-  // Lobby (room is already live by the time this screen shows — see enterRoom())
-  document.getElementById('back-lobby').addEventListener('click', goBackToSetup);
-  document.getElementById('copy-btn').addEventListener('click', copyRoomCode);
-  document.getElementById('copy-link-btn').addEventListener('click', copyRoomLink);
-  document.getElementById('join-input').addEventListener('input', e => {
+  document.getElementById('setup-join-input').addEventListener('input', e => {
     state.joinCode = e.target.value.toUpperCase();
-    renderLobby();
+    renderSetup();
   });
-  document.getElementById('join-btn').addEventListener('click', () => joinRoomByCode(state.joinCode));
+  document.getElementById('setup-join-btn').addEventListener('click', () => joinRoomByCode(state.joinCode));
 
-  // Waiting
-  document.getElementById('cancel-wait').addEventListener('click', goHome);
+  // Game — online connect overlay (hosting a room or joining one — see
+  // enterRoom()/joinRoomByCode(); the player is already on the game screen
+  // the whole time, like starting or joining a Meet call)
+  document.getElementById('overlay-copy-code').addEventListener('click', copyRoomCode);
+  document.getElementById('overlay-copy-link').addEventListener('click', copyRoomLink);
+  document.getElementById('overlay-cancel').addEventListener('click', goBackToSetup);
 
   // Game — menu
   document.getElementById('menu-btn').addEventListener('click', () => {

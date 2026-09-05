@@ -146,57 +146,14 @@
       </div>
 
       <button class="btn-confirm" id="confirm-setup"></button>
-    </div>
-  </div>
 
-  <!-- LOBBY -->
-  <div id="screen-lobby" class="screen">
-    <div class="center-col" style="max-width:440px">
-      <button class="back-btn" id="back-lobby">‹ Settings</button>
-
-      <div class="lobby-header">
-        <h2>Your Room</h2>
-        <p id="lobby-summary"></p>
-      </div>
-
-      <div class="card">
-        <div id="room-code-display" class="room-code"></div>
-        <div class="card-actions">
-          <button class="btn-secondary" id="copy-btn">Copy Code</button>
-          <button class="btn-primary" id="copy-link-btn">Copy Link</button>
-        </div>
-        <div class="room-waiting">
-          <div class="pulse-dots">
-            <div class="dot" style="animation-delay:0s"></div>
-            <div class="dot" style="animation-delay:0.18s"></div>
-            <div class="dot" style="animation-delay:0.36s"></div>
-          </div>
-          <div id="room-wait-text" class="room-wait-text">Waiting for opponent…</div>
+      <div id="setup-join-section" class="setup-join-section hidden">
+        <div class="divider">or join a friend's room</div>
+        <div class="join-row">
+          <input id="setup-join-input" class="join-input" placeholder="Enter code" maxlength="7" autocomplete="off" spellcheck="false">
+          <button class="btn-join" id="setup-join-btn">Join</button>
         </div>
       </div>
-
-      <div class="divider">or join a friend's room</div>
-
-      <div class="join-row">
-        <input id="join-input" class="join-input" placeholder="Enter code" maxlength="7" autocomplete="off" spellcheck="false">
-        <button class="btn-join" id="join-btn">Join</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- WAITING -->
-  <div id="screen-waiting" class="screen">
-    <div class="center-col waiting-content">
-      <div class="pulse-dots">
-        <div class="dot" style="animation-delay:0s"></div>
-        <div class="dot" style="animation-delay:0.18s"></div>
-        <div class="dot" style="animation-delay:0.36s"></div>
-      </div>
-      <div class="waiting-text">
-        <div id="wait-title" class="wait-title">Waiting for opponent…</div>
-        <div id="wait-room" class="wait-room"></div>
-      </div>
-      <button class="btn-cancel" id="cancel-wait">Cancel</button>
     </div>
   </div>
 
@@ -204,6 +161,37 @@
   <div id="screen-game" class="screen">
     <div class="game-col">
       <div class="game-layout">
+
+        <div id="online-overlay" class="online-overlay hidden">
+          <div class="card online-overlay-card">
+            <div id="overlay-hosting" class="overlay-block">
+              <div class="card-label">Your room</div>
+              <div id="overlay-room-code" class="room-code"></div>
+              <div class="card-actions">
+                <button class="btn-secondary" id="overlay-copy-code">Copy Code</button>
+                <button class="btn-primary" id="overlay-copy-link">Copy Link</button>
+              </div>
+              <div class="room-waiting">
+                <div class="pulse-dots">
+                  <div class="dot" style="animation-delay:0s"></div>
+                  <div class="dot" style="animation-delay:0.18s"></div>
+                  <div class="dot" style="animation-delay:0.36s"></div>
+                </div>
+                <div class="room-wait-text">Waiting for opponent…</div>
+              </div>
+            </div>
+            <div id="overlay-joining" class="overlay-block hidden">
+              <div class="pulse-dots">
+                <div class="dot" style="animation-delay:0s"></div>
+                <div class="dot" style="animation-delay:0.18s"></div>
+                <div class="dot" style="animation-delay:0.36s"></div>
+              </div>
+              <div id="overlay-joining-text" class="wait-title">Connecting…</div>
+            </div>
+            <button class="btn-cancel" id="overlay-cancel">Cancel</button>
+          </div>
+        </div>
+
         <div class="game-main">
           <div id="result-banner" class="result-banner">
             <span id="result-banner-text"></span>
