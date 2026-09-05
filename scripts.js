@@ -126,6 +126,7 @@ const state = Object.assign({
   joinCode: '',
   copied: false,
   copiedLink: false,
+  joinRetriesLeft: 0,
   waitTitle: 'Waiting for opponent…',
   opponentName: 'Opponent',
   opponentRating: null,
@@ -366,7 +367,7 @@ function connectSocket(onOpen) {
     // Keeps the connection alive through idle proxy/browser timeouts —
     // without traffic a room could silently die while just sitting there.
     clearInterval(pingInterval);
-    pingInterval = setInterval(() => sendMessage({ type: 'ping' }), 20000);
+    pingInterval = setInterval(() => sendMessage({ type: 'ping' }), 15000);
     onOpen();
   };
   socket.onmessage = (evt) => {
@@ -506,10 +507,19 @@ function handleServerMessage(msg) {
       }
       break;
     case 'roomNotFound':
-      alert(msg.message || 'That room was not found.');
-      closeSocket();
-      state.screen = 'setup';
-      render();
+      if (state.screen === 'waiting' && state.joinRetriesLeft > 0) {
+        state.joinRetriesLeft -= 1;
+        setTimeout(() => {
+          if (state.screen === 'waiting' && socket && socket.readyState === WebSocket.OPEN) {
+            sendJoinRoomMessage();
+          }
+        }, 400);
+      } else {
+        alert(msg.message || 'That room was not found.');
+        closeSocket();
+        state.screen = 'setup';
+        render();
+      }
       break;
   }
 }
@@ -911,11 +921,48 @@ function roomLink() {
   return location.origin + location.pathname + '?room=' + encodeURIComponent(code);
 }
 
-function copyRoomLink() {
-  if (navigator.clipboard) navigator.clipboard.writeText(roomLink()).catch(() => {});
-  state.copiedLink = true;
+// navigator.clipboard silently doesn't exist outside a secure context (https
+// or localhost) — e.g. opening the game via a plain http://<lan-ip> on a
+// phone to test with a friend. Fall back to the old select+execCommand path
+// so "Copy Link" doesn't just claim success while copying nothing.
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) { /* fall through to the legacy path below */ }
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function copyRoomLink() {
+  const ok = await copyText(roomLink());
+  state.copiedLink = ok ? 'ok' : 'failed';
   renderLobby();
   setTimeout(() => { state.copiedLink = false; renderLobby(); }, 1600);
+}
+
+function sendJoinRoomMessage() {
+  sendMessage({
+    type: 'joinRoom',
+    playerId: state.playerId,
+    roomCode: state.roomCode,
+    authToken: state.authToken,
+    guestName: myDisplayName()
+  });
 }
 
 function joinRoomByCode(rawCode) {
@@ -926,16 +973,12 @@ function joinRoomByCode(rawCode) {
   state.roomCode = pretty;
   state.waitTitle = 'Connecting to ' + pretty + '…';
   state.screen = 'waiting';
+  // A friend's joinRoom can reach the server before the host's own createRoom
+  // does, especially over a real (non-local) connection — retry briefly on a
+  // false "not found" instead of failing outright.
+  state.joinRetriesLeft = 10;
   render();
-  connectSocket(() => {
-    sendMessage({
-      type: 'joinRoom',
-      playerId: state.playerId,
-      roomCode: pretty,
-      authToken: state.authToken,
-      guestName: myDisplayName()
-    });
-  });
+  connectSocket(sendJoinRoomMessage);
 }
 
 // A room link (?room=CODE) should drop the visitor straight into the room,
@@ -1044,9 +1087,9 @@ function goBackToSetup() {
   render();
 }
 
-function copyRoomCode() {
-  if (navigator.clipboard) navigator.clipboard.writeText(state.roomCode).catch(() => {});
-  state.copied = true;
+async function copyRoomCode() {
+  const ok = await copyText(state.roomCode);
+  state.copied = ok ? 'ok' : 'failed';
   renderLobby();
   setTimeout(() => { state.copied = false; renderLobby(); }, 1600);
 }
@@ -1181,8 +1224,10 @@ function renderSetup() {
 
 function renderLobby() {
   document.getElementById('room-code-display').textContent = state.roomCode;
-  document.getElementById('copy-btn').textContent = state.copied ? 'Copied' : 'Copy Code';
-  document.getElementById('copy-link-btn').textContent = state.copiedLink ? 'Link Copied' : 'Copy Link';
+  document.getElementById('copy-btn').textContent =
+    state.copied === 'ok' ? 'Copied' : state.copied === 'failed' ? "Couldn't copy" : 'Copy Code';
+  document.getElementById('copy-link-btn').textContent =
+    state.copiedLink === 'ok' ? 'Link Copied' : state.copiedLink === 'failed' ? "Couldn't copy" : 'Copy Link';
 
   const joinInput = document.getElementById('join-input');
   if (joinInput.value !== state.joinCode) joinInput.value = state.joinCode;
