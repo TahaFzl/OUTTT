@@ -1165,6 +1165,8 @@ function renderAccountModal() {
       ? 'Already have an account? Sign In'
       : "Don't have an account? Create one";
   }
+
+  fitAccountModal();
 }
 
 // ── Render: screens ──────────────────────────────────────────────────────────
@@ -1176,6 +1178,47 @@ function render() {
 
   if (state.screen === 'setup') renderSetup();
   else if (state.screen === 'game') renderGame();
+
+  fitActiveScreen();
+}
+
+// No screen is allowed to scroll, and the setup screen in particular can
+// have more content than a short window has room for. Rather than clip it
+// or let the page scroll, shrink it down (like a slide auto-fitting a
+// projector) so everything always stays visible at once.
+function fitToViewport(container, content) {
+  if (!container || !content) return;
+  content.style.transform = '';
+  content.style.marginTop = '';
+  content.style.marginBottom = '';
+
+  const availableH = container.clientHeight;
+  const naturalH = content.offsetHeight;
+  // Below this, treat the measurement as bogus (e.g. a hidden/backgrounded
+  // tab reporting a momentary 0 height) rather than a genuinely tiny
+  // viewport, so a transient reading can't wedge the UI at a tiny scale.
+  if (availableH > 100 && naturalH > availableH) {
+    const scale = availableH / naturalH;
+    const shrink = naturalH - naturalH * scale;
+    content.style.transform = 'scale(' + scale + ')';
+    content.style.marginTop = '-' + (shrink / 2) + 'px';
+    content.style.marginBottom = '-' + (shrink / 2) + 'px';
+  }
+}
+
+// The game screen sizes itself with CSS (the board/side panel calc() rules)
+// rather than this scale trick, so it's left alone here.
+function fitActiveScreen() {
+  if (state.screen === 'game') return;
+  const screenEl = document.querySelector('.screen.active');
+  if (!screenEl) return;
+  const content = screenEl.querySelector(':scope > .center-col');
+  fitToViewport(screenEl, content);
+}
+
+function fitAccountModal() {
+  if (!state.accountOpen) return;
+  fitToViewport(document.getElementById('account-modal'), document.getElementById('account-modal-card'));
 }
 
 function renderSegmented(containerId, opts, value, onPick) {
@@ -1610,5 +1653,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const cellEl = e.target.closest('.game-cell');
     if (!cellEl) return;
     play(parseInt(cellEl.dataset.board), parseInt(cellEl.dataset.cell), false);
+  });
+
+  let resizeRAF = null;
+  window.addEventListener('resize', () => {
+    if (resizeRAF) cancelAnimationFrame(resizeRAF);
+    resizeRAF = requestAnimationFrame(() => {
+      fitActiveScreen();
+      fitAccountModal();
+    });
   });
 });
