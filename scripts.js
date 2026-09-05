@@ -107,6 +107,7 @@ const state = Object.assign({
   roomCode: makeCode(),
   joinCode: '',
   copied: false,
+  copiedLink: false,
   waitTitle: 'Waiting for opponent…',
   opponentName: 'Opponent',
   opponentRating: null,
@@ -397,11 +398,22 @@ function handleServerMessage(msg) {
       alert(msg.message || 'Your opponent has disconnected.');
       goHome();
       break;
-    case 'roomNotFound':
     case 'error':
-      alert(msg.message || 'Something went wrong.');
+      if (state.screen === 'lobby') {
+        // Our own room's code collided with an existing one — silently mint
+        // a fresh code and retry rather than surfacing this to the user.
+        enterRoom();
+      } else {
+        alert(msg.message || 'Something went wrong.');
+        closeSocket();
+        state.screen = 'setup';
+        render();
+      }
+      break;
+    case 'roomNotFound':
+      alert(msg.message || 'That room was not found.');
       closeSocket();
-      state.screen = 'lobby';
+      state.screen = 'setup';
       render();
       break;
   }
@@ -755,13 +767,73 @@ function applyPreset(p) {
 
 function confirmSetup() {
   if (state.mode === 'online') {
-    state.screen = 'lobby';
-    state.roomCode = makeCode();
-    state.copied = false;
-    render();
+    enterRoom();
   } else {
     startGame(state.mode);
   }
+}
+
+// Creates and opens the room immediately — no separate "Open Room" click,
+// so the host lands straight on a live, shareable room (like a Meet link).
+function enterRoom(code) {
+  state.mode = 'online';
+  state.screen = 'lobby';
+  state.roomCode = code || makeCode();
+  state.copied = false;
+  state.copiedLink = false;
+  render();
+  connectSocket(() => {
+    sendMessage({
+      type: 'createRoom',
+      playerId: state.playerId,
+      roomCode: state.roomCode,
+      authToken: state.authToken,
+      guestName: myDisplayName(),
+      timeControl: { bank: state.bank, move: state.move }
+    });
+  });
+}
+
+function roomLink() {
+  const code = state.roomCode.replace(/[^A-Za-z0-9]/g, '');
+  return location.origin + location.pathname + '?room=' + encodeURIComponent(code);
+}
+
+function copyRoomLink() {
+  if (navigator.clipboard) navigator.clipboard.writeText(roomLink()).catch(() => {});
+  state.copiedLink = true;
+  renderLobby();
+  setTimeout(() => { state.copiedLink = false; renderLobby(); }, 1600);
+}
+
+function joinRoomByCode(rawCode) {
+  const code = rawCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  if (code.length < 5) return;
+  const pretty = code.length === 6 ? code.slice(0, 3) + '-' + code.slice(3, 6) : code;
+  state.mode = 'online';
+  state.roomCode = pretty;
+  state.waitTitle = 'Connecting to ' + pretty + '…';
+  state.screen = 'waiting';
+  render();
+  connectSocket(() => {
+    sendMessage({
+      type: 'joinRoom',
+      playerId: state.playerId,
+      roomCode: pretty,
+      authToken: state.authToken,
+      guestName: myDisplayName()
+    });
+  });
+}
+
+// A room link (?room=CODE) should drop the visitor straight into the room,
+// the way opening a Meet link joins the call without extra steps.
+function tryAutoJoinFromURL() {
+  const params = new URLSearchParams(location.search);
+  const room = params.get('room');
+  if (!room) return;
+  history.replaceState(null, '', location.pathname);
+  joinRoomByCode(room);
 }
 
 function startNewLocalOrCpuGame(mode) {
@@ -853,6 +925,7 @@ function goHome() {
 
 function goBackToSetup() {
   stopClock();
+  closeSocket();
   state.screen = 'setup';
   render();
 }
@@ -1008,6 +1081,7 @@ function renderSetup() {
 function renderLobby() {
   document.getElementById('room-code-display').textContent = state.roomCode;
   document.getElementById('copy-btn').textContent = state.copied ? 'Copied' : 'Copy Code';
+  document.getElementById('copy-link-btn').textContent = state.copiedLink ? 'Link Copied' : 'Copy Link';
 
   const joinInput = document.getElementById('join-input');
   if (joinInput.value !== state.joinCode) joinInput.value = state.joinCode;
@@ -1230,9 +1304,8 @@ function buildBoards() {
 document.addEventListener('DOMContentLoaded', () => {
   buildBoards();
   restoreTheme();
-  restoreSession();
-  renderTopbar();
   render();
+  restoreSession().then(tryAutoJoinFromURL);
 
   // Top bar
   document.getElementById('btn-logo').addEventListener('click', goHome);
@@ -1265,46 +1338,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('confirm-setup').addEventListener('click', confirmSetup);
   document.getElementById('hints-toggle').addEventListener('click', () => { state.hints = !state.hints; renderSetup(); });
 
-  // Lobby
+  // Lobby (room is already live by the time this screen shows — see enterRoom())
   document.getElementById('back-lobby').addEventListener('click', goBackToSetup);
   document.getElementById('copy-btn').addEventListener('click', copyRoomCode);
-  document.getElementById('open-room-btn').addEventListener('click', () => {
-    state.waitTitle = 'Waiting for opponent…';
-    state.screen = 'waiting';
-    render();
-    connectSocket(() => {
-      sendMessage({
-        type: 'createRoom',
-        playerId: state.playerId,
-        roomCode: state.roomCode,
-        authToken: state.authToken,
-        guestName: myDisplayName(),
-        timeControl: { bank: state.bank, move: state.move }
-      });
-    });
-  });
+  document.getElementById('copy-link-btn').addEventListener('click', copyRoomLink);
   document.getElementById('join-input').addEventListener('input', e => {
     state.joinCode = e.target.value.toUpperCase();
     renderLobby();
   });
-  document.getElementById('join-btn').addEventListener('click', () => {
-    const code = state.joinCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    if (code.length < 5) return;
-    const pretty = code.slice(0, 3) + '-' + code.slice(3, 6);
-    state.roomCode = pretty;
-    state.waitTitle = 'Connecting to ' + pretty + '…';
-    state.screen = 'waiting';
-    render();
-    connectSocket(() => {
-      sendMessage({
-        type: 'joinRoom',
-        playerId: state.playerId,
-        roomCode: pretty,
-        authToken: state.authToken,
-        guestName: myDisplayName()
-      });
-    });
-  });
+  document.getElementById('join-btn').addEventListener('click', () => joinRoomByCode(state.joinCode));
 
   // Waiting
   document.getElementById('cancel-wait').addEventListener('click', goHome);

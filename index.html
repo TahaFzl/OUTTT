@@ -170,11 +170,19 @@
         <div id="room-code-display" class="room-code"></div>
         <div class="card-actions">
           <button class="btn-secondary" id="copy-btn">Copy Code</button>
-          <button class="btn-primary" id="open-room-btn">Open Room</button>
+          <button class="btn-primary" id="copy-link-btn">Copy Link</button>
+        </div>
+        <div class="room-waiting">
+          <div class="pulse-dots">
+            <div class="dot" style="animation-delay:0s"></div>
+            <div class="dot" style="animation-delay:0.18s"></div>
+            <div class="dot" style="animation-delay:0.36s"></div>
+          </div>
+          <div id="room-wait-text" class="room-wait-text">Waiting for opponent…</div>
         </div>
       </div>
 
-      <div class="divider">or</div>
+      <div class="divider">or join a friend's room</div>
 
       <div class="join-row">
         <input id="join-input" class="join-input" placeholder="Enter code" maxlength="7" autocomplete="off" spellcheck="false">
