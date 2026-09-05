@@ -29,6 +29,12 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+  CREATE TABLE IF NOT EXISTS follows (
+    follower_id TEXT NOT NULL,
+    followee_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (follower_id, followee_id)
+  );
 `);
 
 function getSecret() {
@@ -73,8 +79,15 @@ function getUserByEmail(email) {
     return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
 }
 
+function getFollowCounts(userId) {
+    const following = db.prepare('SELECT COUNT(*) AS n FROM follows WHERE follower_id = ?').get(userId).n;
+    const followers = db.prepare('SELECT COUNT(*) AS n FROM follows WHERE followee_id = ?').get(userId).n;
+    return { following, followers };
+}
+
 function sanitizeUser(row) {
     if (!row) return null;
+    const counts = getFollowCounts(row.id);
     return {
         id: row.id,
         name: row.name,
@@ -83,7 +96,9 @@ function sanitizeUser(row) {
         wins: row.wins,
         losses: row.losses,
         draws: row.draws,
-        rating: row.rating
+        rating: row.rating,
+        following: counts.following,
+        followers: counts.followers
     };
 }
 
@@ -153,6 +168,54 @@ app.get('/api/me', (req, res) => {
     const user = authenticateRequest(req);
     if (!user) return res.status(401).json({ error: 'Not signed in.' });
     res.json({ user: sanitizeUser(user) });
+});
+
+app.get('/api/users/search', (req, res) => {
+    const requester = authenticateRequest(req);
+    const q = String(req.query.q || '').trim().slice(0, 60);
+    if (q.length < 2) return res.json({ users: [] });
+
+    const rows = db.prepare(
+        'SELECT id, name, avatar_color, rating FROM users WHERE name LIKE ? ORDER BY name LIMIT 20'
+    ).all('%' + q + '%');
+
+    const followingSet = requester
+        ? new Set(db.prepare('SELECT followee_id FROM follows WHERE follower_id = ?').all(requester.id).map(r => r.followee_id))
+        : new Set();
+
+    const users = rows
+        .filter(r => !requester || r.id !== requester.id)
+        .map(r => ({
+            id: r.id,
+            name: r.name,
+            avatarColor: r.avatar_color,
+            rating: r.rating,
+            isFollowing: followingSet.has(r.id)
+        }));
+
+    res.json({ users });
+});
+
+app.post('/api/follow', (req, res) => {
+    const requester = authenticateRequest(req);
+    if (!requester) return res.status(401).json({ error: 'Sign in to follow players.' });
+    const targetId = String(req.body.userId || '');
+    if (!targetId || targetId === requester.id) return res.status(400).json({ error: 'Invalid player.' });
+    if (!getUserById(targetId)) return res.status(404).json({ error: 'Player not found.' });
+
+    db.prepare('INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at) VALUES (?, ?, ?)')
+        .run(requester.id, targetId, Date.now());
+    res.json({ ok: true });
+});
+
+app.post('/api/unfollow', (req, res) => {
+    const requester = authenticateRequest(req);
+    if (!requester) return res.status(401).json({ error: 'Sign in to manage follows.' });
+    const targetId = String(req.body.userId || '');
+    if (!targetId) return res.status(400).json({ error: 'Invalid player.' });
+
+    db.prepare('DELETE FROM follows WHERE follower_id = ? AND followee_id = ?').run(requester.id, targetId);
+    res.json({ ok: true });
 });
 
 // ── Game state ───────────────────────────────────────────────────────────────
@@ -541,7 +604,7 @@ function handleMessage(ws, message) {
 }
 
 function createRoom(ws, message) {
-    const { playerId, roomCode, authToken, guestName, timeControl } = message;
+    const { playerId, roomCode, authToken, guestName, timeControl, hostSide } = message;
     if (!playerId || !roomCode) return;
 
     if (rooms.has(roomCode)) {
@@ -551,7 +614,11 @@ function createRoom(ws, message) {
 
     const profile = resolvePlayerProfile(authToken, guestName);
     const player = Object.assign({ id: playerId, ws: ws }, profile);
-    rooms.set(roomCode, { player, timeControl: normalizeTimeControl(timeControl) });
+    rooms.set(roomCode, {
+        player,
+        timeControl: normalizeTimeControl(timeControl),
+        hostSide: hostSide === 'O' ? 'O' : 'X'
+    });
     playerRooms.set(playerId, roomCode);
 
     ws.send(JSON.stringify({
@@ -583,7 +650,9 @@ function joinRoom(ws, message) {
     const profile = resolvePlayerProfile(authToken, guestName);
     const player = Object.assign({ id: playerId, ws: ws }, profile);
     const gameId = roomCode + ':' + generateGameId();
-    const game = new Game(gameId, entry.player, player, entry.timeControl);
+    // hostSide 'X' means the host moves first; 'O' means the joiner does.
+    const players = entry.hostSide === 'O' ? [player, entry.player] : [entry.player, player];
+    const game = new Game(gameId, players[0], players[1], entry.timeControl);
 
     games.set(gameId, game);
     playerGames.set(entry.player.id, gameId);

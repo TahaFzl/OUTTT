@@ -36,15 +36,7 @@ const LEVELS = [{ v: 'easy', label: 'Easy' }, { v: 'normal', label: 'Normal' }, 
 const LEVEL_LABEL = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
 const SIDES = [{ v: 'X', label: '✕' }, { v: 'O', label: '○' }, { v: 'random', label: 'Random' }];
 
-const THEMES = {
-  Midnight: { page: '#000000', tray: '#141416', sub: '#1C1C1E', tile: '#2C2C2E', idle: '#242426', overlay: 'rgba(20,20,22,0.88)' },
-  Graphite: { page: '#0C0C0E', tray: '#17171A', sub: '#212125', tile: '#313136', idle: '#28282C', overlay: 'rgba(23,23,26,0.9)' },
-  Ink:      { page: '#050814', tray: '#0E1424', sub: '#161E33', tile: '#212C48', idle: '#1A2439', overlay: 'rgba(14,20,36,0.9)' },
-  Forest:   { page: '#04120C', tray: '#0B1F17', sub: '#122B20', tile: '#1B3C2C', idle: '#153224', overlay: 'rgba(11,31,23,0.9)' },
-  Wine:     { page: '#140509', tray: '#210B12', sub: '#2C1119', tile: '#3E1A25', idle: '#33141D', overlay: 'rgba(33,11,18,0.9)' }
-};
-const THEME_NAMES = Object.keys(THEMES);
-let CURRENT_THEME = THEMES.Midnight;
+const BOARD_THEME = { tile: '#2C2C2E', idle: '#242426', overlay: 'rgba(20,20,22,0.88)' };
 
 function makeCode() {
   let s = '';
@@ -75,8 +67,35 @@ function freshGame() {
     winReason: null,
     last: null,
     history: [],
-    log: []
+    log: [],
+    snapshots: [],
+    viewIndex: null
   };
+}
+
+// Returns the state to render: the live game, or a read-only look at an
+// earlier move when the player is browsing the Game Log's history.
+function viewState() {
+  const s = state;
+  if (s.viewIndex == null) return s;
+  const snap = s.snapshots[s.viewIndex];
+  if (!snap) return s;
+  return Object.assign({}, s, {
+    cells: snap.cells, winners: snap.winners, active: snap.active,
+    turn: snap.turn, winner: snap.winner, winReason: snap.winReason,
+    clockX: snap.clockX, clockO: snap.clockO, moveLeft: snap.moveLeft,
+    last: snap.last
+  });
+}
+
+function pushSnapshot() {
+  const s = state;
+  s.snapshots = s.snapshots.concat([{
+    cells: s.cells.slice(), winners: s.winners.slice(), active: s.active,
+    turn: s.turn, winner: s.winner, winReason: s.winReason,
+    clockX: s.clockX, clockO: s.clockO, moveLeft: s.moveLeft, last: s.last
+  }]);
+  return s.snapshots.length - 1;
 }
 
 const state = Object.assign({
@@ -99,7 +118,6 @@ const state = Object.assign({
   side: 'X',
   humanSide: 'X',
   hints: true,
-  themeName: 'Midnight',
 
   paused: false,
   menuOpen: false,
@@ -125,6 +143,7 @@ const state = Object.assign({
 
 let aiTimer = null;
 let socket = null;
+let pingInterval = null;
 let clockInterval = null;
 let lastClockTick = Date.now();
 let titleFlashInterval = null;
@@ -182,6 +201,10 @@ function openAccountModal(mode) {
   state.accountOpen = true;
   if (mode) state.authMode = mode;
   state.authError = '';
+  const searchInput = document.getElementById('user-search-input');
+  if (searchInput) searchInput.value = '';
+  const searchResults = document.getElementById('user-search-results');
+  if (searchResults) searchResults.innerHTML = '';
   renderAccountModal();
 }
 
@@ -234,23 +257,82 @@ function signOut() {
   renderAccountModal();
 }
 
-// ── Theme ────────────────────────────────────────────────────────────────────
+// ── Follow / find players ────────────────────────────────────────────────────
 
-function applyTheme(name) {
-  const key = THEMES[name] ? name : 'Midnight';
-  CURRENT_THEME = THEMES[key];
-  state.themeName = key;
-  const root = document.documentElement.style;
-  root.setProperty('--bg', CURRENT_THEME.page);
-  root.setProperty('--surface', CURRENT_THEME.sub);
-  root.setProperty('--tray-bg', CURRENT_THEME.tray);
-  try { localStorage.setItem('outtt-theme', key); } catch (e) { /* ignore */ }
+let searchDebounce = null;
+
+function authHeaders() {
+  return state.authToken ? { Authorization: 'Bearer ' + state.authToken } : {};
 }
 
-function restoreTheme() {
-  let saved = null;
-  try { saved = localStorage.getItem('outtt-theme'); } catch (e) { /* ignore */ }
-  applyTheme(saved && THEMES[saved] ? saved : 'Midnight');
+async function searchUsers(query) {
+  const list = document.getElementById('user-search-results');
+  if (!list) return;
+  if (query.trim().length < 2) { list.innerHTML = ''; return; }
+  try {
+    const data = await apiRequest('/api/users/search?q=' + encodeURIComponent(query), { headers: authHeaders() });
+    renderSearchResults(data.users);
+  } catch (e) { /* leave prior results as-is */ }
+}
+
+function renderSearchResults(users) {
+  const list = document.getElementById('user-search-results');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!users.length) {
+    const empty = document.createElement('div');
+    empty.className = 'search-empty';
+    empty.textContent = 'No players found.';
+    list.appendChild(empty);
+    return;
+  }
+  users.forEach(u => {
+    const row = document.createElement('div');
+    row.className = 'search-result-row';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.style.background = u.avatarColor;
+    avatar.textContent = initialsFor(u.name);
+
+    const info = document.createElement('div');
+    info.className = 'search-result-info';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'search-result-name';
+    nameEl.textContent = u.name;
+    const ratingEl = document.createElement('div');
+    ratingEl.className = 'search-result-rating';
+    ratingEl.textContent = u.rating + ' rating';
+    info.appendChild(nameEl);
+    info.appendChild(ratingEl);
+
+    const btn = document.createElement('button');
+    btn.className = 'btn-follow' + (u.isFollowing ? ' following' : '');
+    btn.textContent = u.isFollowing ? 'Following' : 'Follow';
+    btn.disabled = !state.account;
+    btn.addEventListener('click', () => toggleFollow(u.id, !u.isFollowing, btn));
+
+    row.appendChild(avatar);
+    row.appendChild(info);
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+}
+
+async function toggleFollow(userId, follow, btn) {
+  if (!state.account) return;
+  btn.disabled = true;
+  try {
+    await apiRequest(follow ? '/api/follow' : '/api/unfollow', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+      body: JSON.stringify({ userId: userId })
+    });
+    btn.textContent = follow ? 'Following' : 'Follow';
+    btn.classList.toggle('following', follow);
+    refreshAccount();
+  } catch (e) { /* leave button as it was */ }
+  btn.disabled = false;
 }
 
 // ── Online connection ────────────────────────────────────────────────────────
@@ -265,6 +347,8 @@ function sendMessage(msg) {
 }
 
 function closeSocket() {
+  clearInterval(pingInterval);
+  pingInterval = null;
   if (socket) {
     socket.onopen = null;
     socket.onmessage = null;
@@ -278,14 +362,22 @@ function closeSocket() {
 function connectSocket(onOpen) {
   closeSocket();
   socket = new WebSocket(wsURL());
-  socket.onopen = () => onOpen();
+  socket.onopen = () => {
+    // Keeps the connection alive through idle proxy/browser timeouts —
+    // without traffic a room could silently die while just sitting there.
+    clearInterval(pingInterval);
+    pingInterval = setInterval(() => sendMessage({ type: 'ping' }), 20000);
+    onOpen();
+  };
   socket.onmessage = (evt) => {
     let msg;
     try { msg = JSON.parse(evt.data); } catch (e) { return; }
     handleServerMessage(msg);
   };
   socket.onclose = () => {
-    if (state.mode === 'online' && (state.screen === 'game' || state.screen === 'waiting') && !state.winner) {
+    clearInterval(pingInterval);
+    pingInterval = null;
+    if (state.mode === 'online' && (state.screen === 'game' || state.screen === 'waiting' || state.screen === 'lobby') && !state.winner) {
       alert('Connection to the server was lost.');
       goHome();
     }
@@ -328,6 +420,8 @@ function handleServerMessage(msg) {
       state.menuOpen = false;
       state.paused = false;
       state.sidePanelTab = 'chat';
+      state.snapshots = [];
+      state.viewIndex = null;
       applyServerGameState(msg.gameState);
       state.mySymbol = msg.playerSymbol;
       state.opponentName = (msg.opponent && msg.opponent.name) || 'Opponent';
@@ -359,7 +453,7 @@ function handleServerMessage(msg) {
       break;
     case 'forfeit':
       applyServerGameState(msg.gameState);
-      appendLog(displayName(msg.side) + '’s move time expired — turn forfeited.', true);
+      appendLog(displayName(msg.side) + '’s move time expired — turn forfeited.', true, pushSnapshot());
       render();
       break;
     case 'gameOver':
@@ -369,7 +463,8 @@ function handleServerMessage(msg) {
         msg.winner === 'tie'
           ? 'Game tied!'
           : (displayName(msg.winner) + (msg.winReason === 'flag' ? ' wins on time!' : ' wins the game!')),
-        true
+        true,
+        pushSnapshot()
       );
       refreshAccount();
       break;
@@ -429,8 +524,8 @@ function displayName(symbol) {
   return symbol;
 }
 
-function appendLog(text, highlight) {
-  state.log = state.log.concat([{ text: text, highlight: !!highlight }]);
+function appendLog(text, highlight, moveIndex) {
+  state.log = state.log.concat([{ text: text, highlight: !!highlight, moveIndex: moveIndex == null ? null : moveIndex }]);
   if (state.log.length > 300) state.log = state.log.slice(-300);
   renderLogList();
 }
@@ -438,18 +533,31 @@ function appendLog(text, highlight) {
 function renderLogList() {
   const list = document.getElementById('log-list');
   if (!list) return;
+  const live = state.viewIndex == null;
   list.innerHTML = '';
+  let activeEl = null;
   state.log.forEach(entry => {
     const div = document.createElement('div');
-    div.className = 'log-entry' + (entry.highlight ? ' log-highlight' : '');
+    div.className = 'log-entry'
+      + (entry.highlight ? ' log-highlight' : '')
+      + (entry.moveIndex != null ? ' log-clickable' : '');
+    if (entry.moveIndex != null && entry.moveIndex === state.viewIndex) {
+      div.classList.add('log-active');
+      activeEl = div;
+    }
     div.textContent = entry.text;
+    if (entry.moveIndex != null) {
+      div.addEventListener('click', () => { state.viewIndex = entry.moveIndex; render(); });
+    }
     list.appendChild(div);
   });
-  list.scrollTop = list.scrollHeight;
+  if (live) list.scrollTop = list.scrollHeight;
+  else if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
 }
 
 function logMoveOutcome(symbol, boardIndex, cellIndex, prevWinners, prevWinner) {
-  appendLog(displayName(symbol) + ' → board ' + (boardIndex + 1) + ', cell ' + (cellIndex + 1));
+  const snapIndex = pushSnapshot();
+  appendLog(displayName(symbol) + ' → board ' + (boardIndex + 1) + ', cell ' + (cellIndex + 1), false, snapIndex);
   const bw = state.winners[boardIndex];
   if (bw && bw !== prevWinners[boardIndex]) {
     appendLog('Board ' + (boardIndex + 1) + (bw === 'D' ? ' tied.' : ' won by ' + displayName(bw) + '.'), true);
@@ -474,9 +582,10 @@ function renderChatList() {
     empty.textContent = 'Say hello to your opponent.';
     list.appendChild(empty);
   } else {
-    state.chat.forEach(entry => {
+    state.chat.forEach((entry, i) => {
       const bubble = document.createElement('div');
       bubble.className = 'chat-bubble' + (entry.mine ? ' mine' : '');
+      if (i === state.chat.length - 1) bubble.classList.add('chat-bubble-new');
       const textEl = document.createElement('div');
       textEl.className = 'chat-bubble-text';
       textEl.textContent = entry.text;
@@ -578,7 +687,7 @@ function forfeitTurnLocal() {
   state.turn = side === 'X' ? 'O' : 'X';
   state.active = null;
   state.moveLeft = state.move;
-  appendLog(displayName(side) + '’s move time expired — turn forfeited, opponent plays anywhere.', true);
+  appendLog(displayName(side) + '’s move time expired — turn forfeited, opponent plays anywhere.', true, pushSnapshot());
   render();
   scheduleAiIfNeeded();
 }
@@ -587,7 +696,7 @@ function flagFallLocal(side) {
   state.winner = side === 'X' ? 'O' : 'X';
   state.winReason = 'flag';
   stopClock();
-  appendLog(displayName(side) + ' ran out of time — ' + displayName(state.winner) + ' wins!', true);
+  appendLog(displayName(side) + ' ran out of time — ' + displayName(state.winner) + ' wins!', true, pushSnapshot());
   render();
 }
 
@@ -622,6 +731,7 @@ function legalMoves(cells, winners, active) {
 
 function play(b, c, fromAI) {
   const s = state;
+  if (s.viewIndex != null) return;
   if (s.winner || s.paused) return;
   if (s.mode === 'online') {
     if (fromAI) return;
@@ -782,6 +892,7 @@ function enterRoom(code) {
   state.copied = false;
   state.copiedLink = false;
   render();
+  const hostSide = state.side === 'random' ? (Math.random() < 0.5 ? 'X' : 'O') : state.side;
   connectSocket(() => {
     sendMessage({
       type: 'createRoom',
@@ -789,7 +900,8 @@ function enterRoom(code) {
       roomCode: state.roomCode,
       authToken: state.authToken,
       guestName: myDisplayName(),
-      timeControl: { bank: state.bank, move: state.move }
+      timeControl: { bank: state.bank, move: state.move },
+      hostSide: hostSide
     });
   });
 }
@@ -878,14 +990,16 @@ function undoMove() {
   clearTimeout(aiTimer);
   const s = state;
   const h = s.history.slice();
-  let n = s.mode !== 'local' && h.length > 1 ? 2 : 1;
+  const undoCount = s.mode !== 'local' && h.length > 1 ? 2 : 1;
+  let n = undoCount;
   let snap = null;
   while (n-- > 0 && h.length) snap = h.pop();
   if (!snap) return;
   const log = s.log.slice();
   let k = s.mode !== 'local' ? 2 : 1;
   while (k-- > 0 && log.length > 1) log.pop();
-  Object.assign(state, snap, { history: h, log: log });
+  const snapshots = s.snapshots.slice(0, Math.max(0, s.snapshots.length - undoCount));
+  Object.assign(state, snap, { history: h, log: log, snapshots: snapshots, viewIndex: null });
   state.menuOpen = false;
   render();
   if (state.winner) {
@@ -974,6 +1088,8 @@ function renderAccountModal() {
     av.textContent = initialsFor(state.account.name);
     document.getElementById('profile-name').textContent = state.account.name;
     document.getElementById('profile-meta').textContent = state.account.email;
+    document.getElementById('profile-follow-counts').textContent =
+      state.account.following + ' following · ' + state.account.followers + ' followers';
     document.getElementById('stat-wins').textContent = state.account.wins;
     document.getElementById('stat-losses').textContent = state.account.losses;
     document.getElementById('stat-rating').textContent = state.account.rating;
@@ -1024,19 +1140,6 @@ function renderSegmented(containerId, opts, value, onPick) {
   });
 }
 
-function renderThemeSwatches(containerId) {
-  const el = document.getElementById(containerId);
-  el.innerHTML = '';
-  THEME_NAMES.forEach(name => {
-    const sw = document.createElement('div');
-    sw.className = 'swatch' + (state.themeName === name ? ' active' : '');
-    sw.title = name;
-    sw.style.background = THEMES[name].sub;
-    sw.addEventListener('click', () => { applyTheme(name); render(); });
-    el.appendChild(sw);
-  });
-}
-
 function renderSetup() {
   const s = state;
   document.getElementById('setup-title').textContent =
@@ -1069,10 +1172,8 @@ function renderSetup() {
   document.getElementById('level-row').classList.toggle('hidden', s.mode !== 'cpu');
   renderSegmented('level-seg', LEVELS, s.level, v => { s.level = v; renderSetup(); });
 
-  document.getElementById('side-row').classList.toggle('hidden', s.mode !== 'cpu');
+  document.getElementById('side-row').classList.toggle('hidden', s.mode === 'local');
   renderSegmented('side-seg', SIDES, s.side, v => { s.side = v; renderSetup(); });
-
-  renderThemeSwatches('theme-swatches');
 
   document.getElementById('hints-toggle').classList.toggle('on', s.hints);
   document.getElementById('confirm-setup').textContent = s.mode === 'online' ? 'Create Room' : 'Start Match';
@@ -1109,8 +1210,8 @@ function subTextFor(side) {
 }
 
 function setClockPanel(prefix, side) {
-  const s = state;
-  const active = !s.winner && !s.paused && s.turn === side;
+  const s = viewState();
+  const active = !s.winner && !s.paused && s.turn === side && state.viewIndex == null;
 
   const markEl = document.getElementById(prefix + '-mark');
   markEl.textContent = side === 'X' ? '✕' : '○';
@@ -1161,7 +1262,6 @@ function renderSideTabs() {
 
   document.getElementById('menu-panel').classList.toggle('hidden', !s.menuOpen);
   document.getElementById('menu-btn').classList.toggle('active', s.menuOpen);
-  if (s.menuOpen) renderThemeSwatches('menu-theme-swatches');
 
   document.getElementById('log-footer').textContent = s.move
     ? ('Each move must be played within ' + s.move + 's or the turn is forfeited.')
@@ -1171,14 +1271,22 @@ function renderSideTabs() {
 function renderGame() {
   const s = state;
 
+  // The result banner always reflects the real, live outcome — only the
+  // board/clocks below it change while browsing an earlier move.
   const banner = document.getElementById('result-banner');
+  const bannerText = document.getElementById('result-banner-text');
+  const bannerRematch = document.getElementById('result-rematch-btn');
   if (s.winner) {
     banner.classList.add('active');
-    banner.textContent = s.winner === 'D' ? 'Draw' : (displayName(s.winner) + (s.winReason === 'flag' ? ' wins on time' : ' wins'));
-    banner.style.color = s.winner === 'D' ? 'var(--text2)' : (s.winner === 'X' ? X_COLOR : O_COLOR);
+    bannerText.textContent = s.winner === 'D' ? 'Draw' : (displayName(s.winner) + (s.winReason === 'flag' ? ' wins on time' : ' wins'));
+    bannerText.style.color = s.winner === 'D' ? 'var(--text2)' : (s.winner === 'X' ? X_COLOR : O_COLOR);
+    bannerRematch.textContent = (s.mode === 'online' && s.rematchPending) ? 'Waiting…' : 'Rematch';
+    bannerRematch.disabled = s.mode === 'online' && s.rematchPending;
   } else {
     banner.classList.remove('active');
   }
+
+  document.getElementById('history-banner').classList.toggle('active', s.viewIndex != null);
 
   renderClocks();
 
@@ -1191,18 +1299,45 @@ function renderGame() {
 
   document.getElementById('rematch-incoming').classList.toggle('active', s.mode === 'online' && s.rematchIncoming);
 
+  const viewingHistory = s.viewIndex != null;
+  const notMyTurn = !viewingHistory && !s.winner && !s.paused && (
+    (s.mode === 'cpu' && s.turn === botSide()) ||
+    (s.mode === 'online' && s.turn !== s.mySymbol)
+  );
+  const boardsEl = document.getElementById('boards-container');
+  boardsEl.classList.toggle('not-your-turn', notMyTurn);
+  boardsEl.classList.toggle('viewing-history', viewingHistory);
+
   renderSideTabs();
   renderBoards();
 }
 
-function renderBoards() {
+function backToLive() {
+  state.viewIndex = null;
+  render();
+}
+
+function requestRematch() {
   const s = state;
-  const th = CURRENT_THEME;
+  s.menuOpen = false;
+  if (s.mode === 'online') {
+    if (!s.winner || s.rematchPending) { render(); return; }
+    s.rematchPending = true;
+    sendMessage({ type: 'rematchRequest', playerId: s.playerId });
+    render();
+  } else {
+    resetGame();
+  }
+}
+
+function renderBoards() {
+  const s = viewState();
+  const th = BOARD_THEME;
   const container = document.getElementById('boards-container');
 
   for (let b = 0; b < 9; b++) {
     const bw = s.winners[b];
-    const playable = !s.winner && !s.paused && !bw && (s.active === null || s.active === b);
+    const playable = state.viewIndex == null && !s.winner && !s.paused && !bw && (s.active === null || s.active === b);
     const boardEl = container.children[b];
 
     boardEl.style.opacity = (bw || playable) ? '1' : '0.42';
@@ -1238,7 +1373,7 @@ function renderBoards() {
 }
 
 function updateMainWinLine() {
-  const s = state;
+  const s = viewState();
   const svg = document.getElementById('main-win-line');
   if (!svg) return;
   const linePath = svg.querySelector('.win-line-path');
@@ -1303,7 +1438,6 @@ function buildBoards() {
 
 document.addEventListener('DOMContentLoaded', () => {
   buildBoards();
-  restoreTheme();
   render();
   restoreSession().then(tryAutoJoinFromURL);
 
@@ -1327,6 +1461,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btn-guest').addEventListener('click', playAsGuest);
   document.getElementById('btn-signout').addEventListener('click', signOut);
+  document.getElementById('user-search-input').addEventListener('input', e => {
+    clearTimeout(searchDebounce);
+    const q = e.target.value;
+    searchDebounce = setTimeout(() => searchUsers(q), 300);
+  });
 
   // Home
   document.getElementById('btn-local').addEventListener('click', () => openSetup('local'));
@@ -1360,22 +1499,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('menu-undo').addEventListener('click', () => {
     if (state.mode !== 'online') undoMove();
   });
-  document.getElementById('menu-rematch').addEventListener('click', () => {
-    const s = state;
-    s.menuOpen = false;
-    if (s.mode === 'online') {
-      if (!s.winner || s.rematchPending) { render(); return; }
-      s.rematchPending = true;
-      sendMessage({ type: 'rematchRequest', playerId: s.playerId });
-      render();
-    } else {
-      resetGame();
-    }
-  });
+  document.getElementById('menu-rematch').addEventListener('click', requestRematch);
+  document.getElementById('result-rematch-btn').addEventListener('click', requestRematch);
   document.getElementById('menu-leave').addEventListener('click', () => {
     state.menuOpen = false;
     goHome();
   });
+  document.getElementById('back-to-live-btn').addEventListener('click', backToLive);
 
   // Game — rematch banner
   document.getElementById('rematch-accept').addEventListener('click', () => {

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ultimate Tic Tac Toe</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Crect width='9' height='9' rx='2' fill='%23000'/%3E%3Crect x='0.5' y='0.5' width='2' height='2' rx='0.5' fill='%230A84FF'/%3E%3Crect x='3.5' y='0.5' width='2' height='2' rx='0.5' fill='%232C2C2E'/%3E%3Crect x='6.5' y='0.5' width='2' height='2' rx='0.5' fill='%23FF453A'/%3E%3Crect x='0.5' y='3.5' width='2' height='2' rx='0.5' fill='%232C2C2E'/%3E%3Crect x='3.5' y='3.5' width='2' height='2' rx='0.5' fill='%230A84FF'/%3E%3Crect x='6.5' y='3.5' width='2' height='2' rx='0.5' fill='%232C2C2E'/%3E%3Crect x='0.5' y='6.5' width='2' height='2' rx='0.5' fill='%23FF453A'/%3E%3Crect x='3.5' y='6.5' width='2' height='2' rx='0.5' fill='%232C2C2E'/%3E%3Crect x='6.5' y='6.5' width='2' height='2' rx='0.5' fill='%230A84FF'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -135,14 +136,6 @@
 
         <div class="setup-row">
           <div class="setup-row-info">
-            <div class="setup-row-title">Theme</div>
-            <div class="setup-row-detail">Board and background colour</div>
-          </div>
-          <div id="theme-swatches" class="swatch-row"></div>
-        </div>
-
-        <div class="setup-row">
-          <div class="setup-row-info">
             <div class="setup-row-title">Board hints</div>
             <div class="setup-row-detail">Highlight where you must play</div>
           </div>
@@ -212,7 +205,14 @@
     <div class="game-col">
       <div class="game-layout">
         <div class="game-main">
-          <div id="result-banner" class="result-banner"></div>
+          <div id="result-banner" class="result-banner">
+            <span id="result-banner-text"></span>
+            <button class="btn-primary result-banner-rematch" id="result-rematch-btn" type="button">Rematch</button>
+          </div>
+          <div id="history-banner" class="history-banner">
+            <span>Viewing an earlier move</span>
+            <button class="btn-secondary history-live-btn" id="back-to-live-btn" type="button">Back to Live</button>
+          </div>
           <div id="boards-container" class="boards-grid"></div>
           <p class="game-hint">Your move decides which board your opponent plays in next. Win three small boards in a row to take the game.</p>
         </div>
@@ -247,10 +247,6 @@
               <button class="menu-item" id="menu-undo">Undo</button>
               <button class="menu-item" id="menu-rematch">Rematch</button>
               <button class="menu-item menu-item-danger" id="menu-leave">Leave</button>
-            </div>
-            <div class="menu-theme-row">
-              <div class="card-label">Theme</div>
-              <div id="menu-theme-swatches" class="swatch-row"></div>
             </div>
           </div>
 
@@ -321,6 +317,7 @@
           <div class="profile-info">
             <div class="profile-name" id="profile-name"></div>
             <div class="profile-meta" id="profile-meta"></div>
+            <div class="profile-follow-counts" id="profile-follow-counts"></div>
           </div>
         </div>
         <div class="stat-row">
@@ -328,6 +325,13 @@
           <div class="stat-tile"><div class="stat-value" id="stat-losses"></div><div class="stat-label">Losses</div></div>
           <div class="stat-tile"><div class="stat-value" id="stat-rating"></div><div class="stat-label">Rating</div></div>
         </div>
+
+        <div class="follow-section">
+          <div class="card-label">Find Players</div>
+          <input id="user-search-input" class="modal-input" placeholder="Search by name…" autocomplete="off">
+          <div id="user-search-results" class="search-results"></div>
+        </div>
+
         <button class="btn-secondary-block btn-danger-text" id="btn-signout">Sign Out</button>
       </div>
     </div>
