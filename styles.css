@@ -22,7 +22,9 @@
 
 html, body {
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -784,7 +786,9 @@ button { font-family: inherit; }
   overflow: hidden;
   align-self: center;
   min-height: min(640px, 72vh);
+  min-height: min(640px, 72dvh);
   max-height: 82vh;
+  max-height: 82dvh;
   background: var(--tray-bg);
 }
 
@@ -801,6 +805,7 @@ button { font-family: inherit; }
   box-shadow: 0 0 0 1px rgba(255,255,255,0.05);
   width: 100%;
   max-width: min(714px, calc(100vh - 215px));
+  max-width: min(714px, calc(100dvh - 215px));
   transition: opacity 0.2s ease;
 }
 
@@ -1316,7 +1321,7 @@ button { font-family: inherit; }
 
 @media (max-width: 860px) {
   .game-layout { flex-direction: column; align-items: center; }
-  .game-side { flex: 0 1 auto; min-height: 320px; max-height: none; height: 60vh; width: 100%; max-width: 480px; }
+  .game-side { flex: 0 1 auto; min-height: 320px; max-height: none; height: 60vh; height: 60dvh; width: 100%; max-width: 480px; }
   /* Stacked layout gives the side panel far less room than desktop's
      tall column, and the two clock panels were eating most of it —
      leaving the chat/log list a sliver. Trim their padding here so the
@@ -1337,7 +1342,7 @@ button { font-family: inherit; }
   .game-cell { border-radius: 8px; }
   .board-overlay { border-radius: 15px; }
   .rematch-request { flex-direction: column; align-items: stretch; text-align: center; }
-  .game-side { height: 56vh; }
+  .game-side { height: 56vh; height: 56dvh; }
   .clock-time { font-size: 18px; }
 
   /* A label plus a 4-5 option segmented control never both fit on one row

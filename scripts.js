@@ -1136,6 +1136,11 @@ function renderTopbar() {
     signedOut.classList.remove('hidden');
     signedIn.classList.add('hidden');
   }
+  // Signing in/out changes the topbar's own height (chip + avatar vs plain
+  // buttons), which changes how much room the screen below it has — a scale
+  // fit computed before this swap would otherwise go stale and let the
+  // screen genuinely overflow.
+  fitActiveScreen();
 }
 
 function renderAccountModal() {
